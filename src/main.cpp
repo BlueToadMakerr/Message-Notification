@@ -9,7 +9,9 @@
 using namespace geode::prelude;
 
 class $modify(MessageChecker, MenuLayer) {
-    bool m_hasBooted = false;
+    struct Fields {
+        bool m_hasBooted = false;
+    };
 
     static std::vector<std::string> split(const std::string& str, char delimiter) {
         std::vector<std::string> result;
@@ -52,74 +54,73 @@ class $modify(MessageChecker, MenuLayer) {
         req->setRequestData(postData.c_str(), postData.size());
         req->setTag("MessageCheck");
 
-        // Use lambda instead of method pointer to fix Windows compatibility
-        req->setResponseCallback([this](cocos2d::extension::CCHttpClient* client, cocos2d::extension::CCHttpResponse* resp) {
-            log::debug("[onMessageResponse] Response received");
-
-            if (!resp || !resp->isSucceed()) {
-                log::warn("[onMessageResponse] Request failed or null response.");
-                return;
-            }
-
-            std::string response(resp->getResponseData()->begin(), resp->getResponseData()->end());
-            log::debug("[onMessageResponse] Response data: {}", response);
-
-            if (response.empty() || response == "-1") {
-                log::info("[onMessageResponse] No messages found.");
-                return;
-            }
-
-            auto messages = split(response, '|');
-            if (messages.empty()) {
-                log::info("[onMessageResponse] Message list empty.");
-                return;
-            }
-
-            auto fields = split(messages.front(), ':');
-            if (fields.size() < 3) {
-                log::warn("[onMessageResponse] Unexpected message format.");
-                return;
-            }
-
-            int latestID = std::stoi(fields[0]);
-            std::string user = fields[1];
-            std::string subject = fields[2];
-
-            log::info("[onMessageResponse] Latest ID: {}, From: {}, Subject: {}", latestID, user, subject);
-
-            int lastSeenID = Mod::get()->getSavedValue<int>("last-message-id", 0);
-            log::debug("[onMessageResponse] Saved last ID: {}", lastSeenID);
-
-            std::string desc = fmt::format("From: {}\n{}", user, subject);
-
-            if (!m_hasBooted) {
-                log::info("[onMessageResponse] Showing message on boot.");
-                showNotification("Latest Message", desc);
-                Mod::get()->setSavedValue("last-message-id", latestID);
-                m_hasBooted = true;
-                return;
-            }
-
-            if (latestID > lastSeenID) {
-                log::info("[onMessageResponse] New message detected!");
-                showNotification("New Message!", desc);
-                Mod::get()->setSavedValue("last-message-id", latestID);
-            } else {
-                log::debug("[onMessageResponse] No new messages.");
-            }
-        });
-
+        req->setResponseCallback(this, SEL_HttpResponse(&MessageChecker::onMessageResponse));
         cocos2d::extension::CCHttpClient::getInstance()->send(req);
         req->release();
+    }
+
+    void onMessageResponse(cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
+        log::debug("[onMessageResponse] Response received");
+
+        if (!resp || !resp->isSucceed()) {
+            log::warn("[onMessageResponse] Request failed or null response.");
+            return;
+        }
+
+        std::string response(resp->getResponseData()->begin(), resp->getResponseData()->end());
+        log::debug("[onMessageResponse] Response data: {}", response);
+
+        if (response.empty() || response == "-1") {
+            log::info("[onMessageResponse] No messages found.");
+            return;
+        }
+
+        auto messages = split(response, '|');
+        if (messages.empty()) {
+            log::info("[onMessageResponse] Message list empty.");
+            return;
+        }
+
+        auto fields = split(messages.front(), ':');
+        if (fields.size() < 3) {
+            log::warn("[onMessageResponse] Unexpected message format.");
+            return;
+        }
+
+        int latestID = std::stoi(fields[0]);
+        std::string user = fields[1];
+        std::string subject = fields[2];
+
+        log::info("[onMessageResponse] Latest ID: {}, From: {}, Subject: {}", latestID, user, subject);
+
+        int lastSeenID = Mod::get()->getSavedValue<int>("last-message-id", 0);
+        log::debug("[onMessageResponse] Saved last ID: {}", lastSeenID);
+
+        std::string desc = fmt::format("From: {}\n{}", user, subject);
+
+        if (!m_fields->m_hasBooted) {
+            log::info("[onMessageResponse] Showing message on boot.");
+            showNotification("Latest Message", desc);
+            Mod::get()->setSavedValue("last-message-id", latestID);
+            m_fields->m_hasBooted = true;
+            return;
+        }
+
+        if (latestID > lastSeenID) {
+            log::info("[onMessageResponse] New message detected!");
+            showNotification("New Message!", desc);
+            Mod::get()->setSavedValue("last-message-id", latestID);
+        } else {
+            log::debug("[onMessageResponse] No new messages.");
+        }
     }
 
     bool init() {
         if (!MenuLayer::init()) return false;
 
         log::info("[init] MessageChecker initialized.");
-
-        this->schedule(schedule_selector(MessageChecker::checkMessages), 300.0f); // every 5 min
-        this->checkMessages(0); // check immediately on boot
+        this->schedule(schedule_selector(MessageChecker::checkMessages), 300.0f);
+        this->checkMessages(0);
         return true;
     }
 };
