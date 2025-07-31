@@ -6,6 +6,7 @@
 #include <Geode/loader/SettingNode.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/cocos/extensions/network/HttpClient.h>
+#include <Geode/loader/SettingNode.hpp>
 
 using namespace geode::prelude;
 
