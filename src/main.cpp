@@ -8,21 +8,6 @@
 
 using namespace geode::prelude;
 
-// Helper class to show a delayed notification
-class MessageCheckerHelper {
-public:
-    static void showNotificationLater(CCNode* sender) {
-        if (auto layer = dynamic_cast<MenuLayer*>(sender)) {
-            AchievementNotifier::sharedState()->notifyAchievement(
-                "Latest Message",
-                "From: Example\nHello there!",
-                "GJ_messageIcon_001.png",
-                false
-            );
-        }
-    }
-};
-
 class $modify(MessageChecker, MenuLayer) {
     struct Fields {
         bool m_hasBooted = false;
@@ -42,6 +27,15 @@ class $modify(MessageChecker, MenuLayer) {
         AchievementNotifier::sharedState()->notifyAchievement(
             title.c_str(),
             desc.c_str(),
+            "GJ_messageIcon_001.png",
+            false
+        );
+    }
+
+    void showNotificationLater(CCNode*) {
+        AchievementNotifier::sharedState()->notifyAchievement(
+            "Latest Message",
+            "From: Example\nHello there!",
             "GJ_messageIcon_001.png",
             false
         );
@@ -137,11 +131,11 @@ class $modify(MessageChecker, MenuLayer) {
         this->schedule(schedule_selector(MessageChecker::checkMessages), 300.0f);
         this->checkMessages(0);
 
-        // Test achievement to verify mod works (only on boot)
+        // Show test notification after 1 second (boot-only)
         this->runAction(
             cocos2d::CCSequence::create(
                 cocos2d::CCDelayTime::create(1.0f),
-                cocos2d::CCCallFuncN::create(this, callfuncN_selector(MessageCheckerHelper::showNotificationLater)),
+                cocos2d::CCCallFuncN::create(this, callfuncN_selector(MessageChecker::showNotificationLater)),
                 nullptr
             )
         );
