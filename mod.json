@@ -1,0 +1,32 @@
+{
+  "geode": "4.6.3",
+  "gd": {
+    "win": "2.2074",
+    "mac": "2.2074",
+    "ios": "2.2074",
+    "android": "2.2074"
+  },
+  "id": "bluetoadmaker.autooption",
+  "name": "Auto Options",
+  "version": "v1.1.1",
+  "developer": "BlueToadMaker",
+  "description": "Places option triggers in such a way that you can make the game auto by holding",
+  "tags": ["editor", "offline", "enhancement"],
+  "links": {
+    "source": "https://github.com/BlueToadMakerr/Auto-Options"
+  },
+  "issues": {
+    "info": "Report issues on the GitHub repo",
+    "url": "https://github.com/BlueToadMakerr/Auto-Options/issues"
+  },
+  "settings": {
+    "custom-setting-value": {
+      "default": 0,
+      "name": "Group ID",
+      "description": "Adds a group ID to the option triggers.\nSet this to 0 to disable this setting. Enable if trying to control the triggers all at once",
+      "type": "int",
+      "min": 0,
+      "max": 9999
+    }
+  }
+}
