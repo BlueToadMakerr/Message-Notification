@@ -16,43 +16,35 @@ class $modify(MessageChecker, MenuLayer) {
         while (std::getline(ss, item, delimiter)) {
             result.push_back(item);
         }
-        log::debug("[split] Input string: '{}', delimiter: '{}', result count: {}", str, delimiter, result.size());
         return result;
     }
 
-    void onMessageResponse(cocos2d::CCObject* sender, void* data) {
-        log::info("[onMessageResponse] Received HTTP response callback");
+    void onMessageResponse(cocos2d::extension::CCHttpClient* client, cocos2d::extension::CCHttpResponse* resp) {
+        log::debug("[onMessageResponse] Called");
 
-        auto* resp = static_cast<cocos2d::extension::CCHttpResponse*>(data);
-        if (!resp) {
-            log::error("[onMessageResponse] Response is null");
-            return;
-        }
-
-        if (!resp->isSucceed()) {
-            log::error("[onMessageResponse] Response failed with error: {}", resp->getErrorBuffer());
+        if (!resp || !resp->isSucceed()) {
+            log::warn("[onMessageResponse] Failed or null response");
             return;
         }
 
         std::string response(resp->getResponseData()->begin(), resp->getResponseData()->end());
-        log::debug("[onMessageResponse] Response string: {}", response);
+        log::debug("[onMessageResponse] Response: {}", response);
 
         if (response.empty() || response == "-1") {
-            log::warn("[onMessageResponse] Response is empty or no messages (-1)");
+            log::info("[onMessageResponse] No new messages");
             return;
         }
 
         std::vector<std::string> messages = split(response, '|');
-        log::info("[onMessageResponse] Parsed {} message(s)", messages.size());
-
         static size_t lastCount = 0;
+        log::info("[onMessageResponse] Message count: {}, Last count: {}", messages.size(), lastCount);
+
         if (messages.size() <= lastCount) {
-            log::debug("[onMessageResponse] No new messages. Last count: {}, current: {}", lastCount, messages.size());
+            log::info("[onMessageResponse] No new messages since last check");
             return;
         }
 
         size_t newMessages = messages.size() - lastCount;
-        log::info("[onMessageResponse] Detected {} new message(s)", newMessages);
         lastCount = messages.size();
 
         std::string title = newMessages == 1 ? "New Message!" : fmt::format("{} New Messages!", newMessages);
@@ -61,29 +53,26 @@ class $modify(MessageChecker, MenuLayer) {
 
         if (newMessages == 1) {
             auto fields = split(messages.back(), ':');
-            log::debug("[onMessageResponse] Fields for last message: {}", fields.size());
             if (fields.size() >= 3) {
                 std::string user = fields[1];
                 std::string subject = fields[2];
                 desc = fmt::format("From: {}\n{}", user, subject);
-                log::info("[onMessageResponse] Showing notification for 1 message from '{}': '{}'", user, subject);
-            } else {
-                log::warn("[onMessageResponse] Not enough fields in message for single-message display");
+                log::info("[onMessageResponse] Message from: {} - {}", user, subject);
             }
         }
 
-        log::debug("[onMessageResponse] Triggering AchievementNotifier");
         AchievementNotifier::sharedState()->notifyAchievement(title.c_str(), desc.c_str(), icon.c_str(), false);
+        log::debug("[onMessageResponse] Notification displayed");
     }
 
     void checkMessages(float) {
-        log::info("[checkMessages] Checking for new messages...");
+        log::debug("[checkMessages] Running message check");
 
         auto* acc = GJAccountManager::sharedState();
-        log::debug("[checkMessages] accountID: {}, GJP2 length: {}", acc->m_accountID, acc->m_GJP2.length());
+        log::debug("[checkMessages] accountID: {}, GJP2 size: {}", acc->m_accountID, acc->m_GJP2.size());
 
         if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
-            log::warn("[checkMessages] Invalid account ID or missing GJP2. Skipping check.");
+            log::warn("[checkMessages] Invalid account ID or empty GJP2");
             return;
         }
 
@@ -91,32 +80,26 @@ class $modify(MessageChecker, MenuLayer) {
             "accountID={}&gjp2={}&secret=Wmfd2893gb7",
             acc->m_accountID, acc->m_GJP2
         );
-        log::debug("[checkMessages] Post data: {}", postData);
 
         auto* req = new cocos2d::extension::CCHttpRequest();
         req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");
         req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
         req->setRequestData(postData.c_str(), postData.size());
-        log::debug("[checkMessages] Setting response callback");
-        req->setResponseCallback(this, static_cast<cocos2d::extension::SEL_HttpResponse>(&MessageChecker::onMessageResponse));
-
-        log::info("[checkMessages] Sending HTTP request...");
+        req->setResponseCallback(this, callfuncND_selector(MessageChecker::onMessageResponse));
         cocos2d::extension::CCHttpClient::getInstance()->send(req);
         req->release();
+
+        log::debug("[checkMessages] Request sent");
     }
 
     bool init() {
-        log::info("[init] Initializing MessageChecker...");
-        if (!MenuLayer::init()) {
-            log::error("[init] MenuLayer base init failed");
-            return false;
-        }
+        if (!MenuLayer::init()) return false;
 
-        log::debug("[init] Scheduling periodic message checks every 5 minutes");
+        log::info("[MessageChecker] init called - starting message check timer");
         this->schedule(schedule_selector(MessageChecker::checkMessages), 300.0f);
 
-        log::info("[init] Performing initial message check immediately");
-        this->checkMessages(0.0f);
+        // Trigger once on boot to verify it works
+        this->checkMessages(0);
         return true;
     }
 };
