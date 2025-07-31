@@ -1,4 +1,11 @@
-#include <Geode/Geode.hpp> #include <Geode/modify/MenuLayer.hpp> #include <Geode/binding/AchievementNotifier.hpp> #include <Geode/binding/GJAccountManager.hpp> #include <Geode/utils/string.hpp> #include <Geode/loader/SettingNode.hpp> #include <Geode/ui/GeodeUI.hpp> #include <Geode/cocos/extensions/network/HttpClient.h>
+#include <Geode/Geode.hpp>
+#include <Geode/modify/MenuLayer.hpp>
+#include <Geode/binding/AchievementNotifier.hpp>
+#include <Geode/binding/GJAccountManager.hpp>
+#include <Geode/utils/string.hpp>
+#include <Geode/loader/SettingNode.hpp>
+#include <Geode/ui/GeodeUI.hpp>
+#include <Geode/cocos/extensions/network/HttpClient.h>
 
 using namespace geode::prelude;
 
