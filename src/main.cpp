@@ -1,11 +1,27 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/MenuLayer.hpp>
+#include <Geode/binding/AchievementNotifier.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/utils/string.hpp>
 #include <Geode/loader/Log.hpp>
 #include <Geode/cocos/extensions/network/HttpClient.h>
 
 using namespace geode::prelude;
+
+// Helper class to show a delayed notification
+class MessageCheckerHelper {
+public:
+    static void showNotificationLater(CCNode* sender) {
+        if (auto layer = dynamic_cast<MenuLayer*>(sender)) {
+            AchievementNotifier::sharedState()->notifyAchievement(
+                "Latest Message",
+                "From: Example\nHello there!",
+                "GJ_messageIcon_001.png",
+                false
+            );
+        }
+    }
+};
 
 class $modify(MessageChecker, MenuLayer) {
     struct Fields {
@@ -22,42 +38,13 @@ class $modify(MessageChecker, MenuLayer) {
         return result;
     }
 
-    void showNotification(const std::string& title, const std::string& desc, const std::string& iconName = "GJ_messageIcon_001.png") {
-        auto winSize = CCDirector::sharedDirector()->getWinSize();
-
-        auto layer = CCLayer::create();
-        auto bg = CCSprite::createWithSpriteFrameName("GJ_square01.png");
-        bg->setScale(0.6f);
-        bg->setPosition({ winSize.width / 2, winSize.height - 60 });
-        layer->addChild(bg);
-
-        auto titleLabel = CCLabelBMFont::create(title.c_str(), "goldFont.fnt");
-        titleLabel->setPosition({ winSize.width / 2, winSize.height - 40 });
-        titleLabel->setScale(0.5f);
-        layer->addChild(titleLabel);
-
-        auto descLabel = CCLabelBMFont::create(desc.c_str(), "chatFont.fnt", 220.0f, kCCTextAlignmentCenter);
-        descLabel->setPosition({ winSize.width / 2, winSize.height - 65 });
-        descLabel->setScale(0.4f);
-        layer->addChild(descLabel);
-
-        auto icon = CCSprite::createWithSpriteFrameName(iconName.c_str());
-        if (icon) {
-            icon->setScale(0.5f);
-            icon->setPosition({ winSize.width / 2 - 90, winSize.height - 60 });
-            layer->addChild(icon);
-        }
-
-        CCDirector::sharedDirector()->getRunningScene()->addChild(layer, 999);
-
-        layer->runAction(CCSequence::create(
-            CCDelayTime::create(4.0f),
-            CCFadeOut::create(1.0f),
-            CCCallFunc::create([layer]() {
-                layer->removeFromParentAndCleanup(true);
-            }),
-            nullptr
-        ));
+    void showNotification(const std::string& title, const std::string& desc) {
+        AchievementNotifier::sharedState()->notifyAchievement(
+            title.c_str(),
+            desc.c_str(),
+            "GJ_messageIcon_001.png",
+            false
+        );
     }
 
     void checkMessages(float) {
@@ -149,6 +136,16 @@ class $modify(MessageChecker, MenuLayer) {
         log::info("[init] MessageChecker initialized.");
         this->schedule(schedule_selector(MessageChecker::checkMessages), 300.0f);
         this->checkMessages(0);
+
+        // Test achievement to verify mod works (only on boot)
+        this->runAction(
+            cocos2d::CCSequence::create(
+                cocos2d::CCDelayTime::create(1.0f),
+                cocos2d::CCCallFuncN::create(this, callfuncN_selector(MessageCheckerHelper::showNotificationLater)),
+                nullptr
+            )
+        );
+
         return true;
     }
 };
