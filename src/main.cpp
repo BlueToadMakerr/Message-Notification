@@ -16,86 +16,74 @@ class $modify(MessageChecker, MenuLayer) {
         while (std::getline(ss, item, delimiter)) {
             result.push_back(item);
         }
+        log::debug("[split] Input string: '{}', delimiter: '{}', result count: {}", str, delimiter, result.size());
         return result;
     }
 
     void onMessageResponse(cocos2d::CCObject* sender, void* data) {
-        log::info("Received message response");
+        log::info("[onMessageResponse] Received HTTP response callback");
 
         auto* resp = static_cast<cocos2d::extension::CCHttpResponse*>(data);
-        if (!resp || !resp->isSucceed()) {
-            log::warn("HTTP response failed or null");
+        if (!resp) {
+            log::error("[onMessageResponse] Response is null");
+            return;
+        }
+
+        if (!resp->isSucceed()) {
+            log::error("[onMessageResponse] Response failed with error: {}", resp->getErrorBuffer());
             return;
         }
 
         std::string response(resp->getResponseData()->begin(), resp->getResponseData()->end());
-        log::info("Raw server response: {}", response);
+        log::debug("[onMessageResponse] Response string: {}", response);
 
         if (response.empty() || response == "-1") {
-            log::info("No messages found or response was -1");
+            log::warn("[onMessageResponse] Response is empty or no messages (-1)");
             return;
         }
 
         std::vector<std::string> messages = split(response, '|');
-        log::info("Parsed {} messages", messages.size());
+        log::info("[onMessageResponse] Parsed {} message(s)", messages.size());
 
-        if (messages.empty()) return;
-
-        int lastMessageID = Mod::get()->getSaveValue<int>("last-message-id").value_or(0);
-        log::info("Last saved message ID: {}", lastMessageID);
-
-        std::vector<std::string> newMessages;
-        int newestID = lastMessageID;
-
-        for (const auto& msg : messages) {
-            auto parts = split(msg, ':');
-            if (parts.size() >= 1) {
-                int id = std::stoi(parts[0]);
-                log::info("Found message ID: {}", id);
-                if (id > lastMessageID) {
-                    newMessages.push_back(msg);
-                    log::info("New message found: {}", msg);
-                    if (id > newestID) newestID = id;
-                }
-            }
-        }
-
-        if (newMessages.empty()) {
-            log::info("No new messages to notify");
+        static size_t lastCount = 0;
+        if (messages.size() <= lastCount) {
+            log::debug("[onMessageResponse] No new messages. Last count: {}, current: {}", lastCount, messages.size());
             return;
         }
 
-        log::info("Total new messages: {}", newMessages.size());
-        log::info("Saving newest message ID: {}", newestID);
-        Mod::get()->setSaveValue("last-message-id", newestID);
+        size_t newMessages = messages.size() - lastCount;
+        log::info("[onMessageResponse] Detected {} new message(s)", newMessages);
+        lastCount = messages.size();
 
-        std::string title;
+        std::string title = newMessages == 1 ? "New Message!" : fmt::format("{} New Messages!", newMessages);
         std::string desc = "Check your inbox!";
         std::string icon = "GJ_messageIcon_001.png";
 
-        if (newMessages.size() == 1) {
-            auto parts = split(newMessages[0], ':');
-            std::string user = parts.size() > 1 ? geode::utils::string::urlDecode(parts[1]) : "Unknown";
-            std::string subject = parts.size() > 2 ? geode::utils::string::urlDecode(parts[2]) : "(No subject)";
-            title = "New Message!";
-            desc = fmt::format("From: {}\n{}", user, subject);
-            log::info("Notifying single message from '{}' with subject '{}'", user, subject);
-        } else {
-            title = fmt::format("{} New Messages!", newMessages.size());
-            log::info("Notifying {} new messages", newMessages.size());
+        if (newMessages == 1) {
+            auto fields = split(messages.back(), ':');
+            log::debug("[onMessageResponse] Fields for last message: {}", fields.size());
+            if (fields.size() >= 3) {
+                std::string user = fields[1];
+                std::string subject = fields[2];
+                desc = fmt::format("From: {}\n{}", user, subject);
+                log::info("[onMessageResponse] Showing notification for 1 message from '{}': '{}'", user, subject);
+            } else {
+                log::warn("[onMessageResponse] Not enough fields in message for single-message display");
+            }
         }
 
-        AchievementNotifier::sharedState()->notifyAchievement(
-            title.c_str(), desc.c_str(), icon.c_str(), false
-        );
+        log::debug("[onMessageResponse] Triggering AchievementNotifier");
+        AchievementNotifier::sharedState()->notifyAchievement(title.c_str(), desc.c_str(), icon.c_str(), false);
     }
 
-    void checkMessages(float = 0.f) {
-        log::info("Initiating message check...");
+    void checkMessages(float) {
+        log::info("[checkMessages] Checking for new messages...");
 
         auto* acc = GJAccountManager::sharedState();
+        log::debug("[checkMessages] accountID: {}, GJP2 length: {}", acc->m_accountID, acc->m_GJP2.length());
+
         if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
-            log::warn("User is not logged in; skipping message check");
+            log::warn("[checkMessages] Invalid account ID or missing GJP2. Skipping check.");
             return;
         }
 
@@ -103,29 +91,32 @@ class $modify(MessageChecker, MenuLayer) {
             "accountID={}&gjp2={}&secret=Wmfd2893gb7",
             acc->m_accountID, acc->m_GJP2
         );
-
-        log::info("Sending POST request with accountID {}", acc->m_accountID);
+        log::debug("[checkMessages] Post data: {}", postData);
 
         auto* req = new cocos2d::extension::CCHttpRequest();
         req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");
         req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
         req->setRequestData(postData.c_str(), postData.size());
-        req->setResponseCallback(this, cocos2d::extension::SEL_HttpResponse(&MessageChecker::onMessageResponse));
+        log::debug("[checkMessages] Setting response callback");
+        req->setResponseCallback(this, static_cast<cocos2d::extension::SEL_HttpResponse>(&MessageChecker::onMessageResponse));
+
+        log::info("[checkMessages] Sending HTTP request...");
         cocos2d::extension::CCHttpClient::getInstance()->send(req);
         req->release();
     }
 
     bool init() {
-        if (!MenuLayer::init()) return false;
+        log::info("[init] Initializing MessageChecker...");
+        if (!MenuLayer::init()) {
+            log::error("[init] MenuLayer base init failed");
+            return false;
+        }
 
-        log::info("MessageChecker initialized");
-
-        // Run once on startup
-        this->checkMessages();
-
-        // Schedule every 5 minutes
+        log::debug("[init] Scheduling periodic message checks every 5 minutes");
         this->schedule(schedule_selector(MessageChecker::checkMessages), 300.0f);
 
+        log::info("[init] Performing initial message check immediately");
+        this->checkMessages(0.0f);
         return true;
     }
 };
