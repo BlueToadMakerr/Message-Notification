@@ -23,22 +23,17 @@ class $modify(MessageChecker, MenuLayer) {
         return result;
     }
 
-    void showNotification(const std::string& title, const std::string& desc) {
+    void showNotification(const std::string& title) {
         AchievementNotifier::sharedState()->notifyAchievement(
             title.c_str(),
-            desc.c_str(),
+            "", // empty description since it's not showing properly
             "GJ_messageIcon_001.png",
             false
         );
     }
 
     void showNotificationLater(CCNode*) {
-        AchievementNotifier::sharedState()->notifyAchievement(
-            "Latest Message",
-            "From: Example\nHello there!",
-            "GJ_messageIcon_001.png",
-            false
-        );
+        showNotification("Latest Message\nSent by: Example\nHello there!");
     }
 
     void checkMessages(float) {
@@ -105,11 +100,19 @@ class $modify(MessageChecker, MenuLayer) {
         int lastSeenID = Mod::get()->getSavedValue<int>("last-message-id", 0);
         log::debug("[onMessageResponse] Saved last ID: {}", lastSeenID);
 
-        std::string desc = fmt::format("From: {}\n{}", user, subject);
+        std::string title;
+
+        if (messages.size() == 1) {
+            // One message: include details in title
+            title = fmt::format("New Message!\nSent by: {}\n{}", user, subject);
+        } else {
+            // Multiple messages: show count only
+            title = fmt::format("{} New Messages!", messages.size());
+        }
 
         if (!m_fields->m_hasBooted) {
             log::info("[onMessageResponse] Showing message on boot.");
-            showNotification("Latest Message", desc);
+            showNotification(title);
             Mod::get()->setSavedValue("last-message-id", latestID);
             m_fields->m_hasBooted = true;
             return;
@@ -117,7 +120,7 @@ class $modify(MessageChecker, MenuLayer) {
 
         if (latestID > lastSeenID) {
             log::info("[onMessageResponse] New message detected!");
-            showNotification("New Message!", desc);
+            showNotification(title);
             Mod::get()->setSavedValue("last-message-id", latestID);
         } else {
             log::debug("[onMessageResponse] No new messages.");
