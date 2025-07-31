@@ -1,6 +1,5 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/MenuLayer.hpp>
-#include <Geode/binding/AchievementNotifier.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/utils/string.hpp>
 #include <Geode/loader/Log.hpp>
@@ -23,13 +22,42 @@ class $modify(MessageChecker, MenuLayer) {
         return result;
     }
 
-    void showNotification(const std::string& title, const std::string& desc) {
-        AchievementNotifier::sharedState()->notifyAchievement(
-            title.c_str(),
-            desc.c_str(),
-            "GJ_messageIcon_001.png",
-            false
-        );
+    void showNotification(const std::string& title, const std::string& desc, const std::string& iconName = "GJ_messageIcon_001.png") {
+        auto winSize = CCDirector::sharedDirector()->getWinSize();
+
+        auto layer = CCLayer::create();
+        auto bg = CCSprite::createWithSpriteFrameName("GJ_square01.png");
+        bg->setScale(0.6f);
+        bg->setPosition({ winSize.width / 2, winSize.height - 60 });
+        layer->addChild(bg);
+
+        auto titleLabel = CCLabelBMFont::create(title.c_str(), "goldFont.fnt");
+        titleLabel->setPosition({ winSize.width / 2, winSize.height - 40 });
+        titleLabel->setScale(0.5f);
+        layer->addChild(titleLabel);
+
+        auto descLabel = CCLabelBMFont::create(desc.c_str(), "chatFont.fnt", 220.0f, kCCTextAlignmentCenter);
+        descLabel->setPosition({ winSize.width / 2, winSize.height - 65 });
+        descLabel->setScale(0.4f);
+        layer->addChild(descLabel);
+
+        auto icon = CCSprite::createWithSpriteFrameName(iconName.c_str());
+        if (icon) {
+            icon->setScale(0.5f);
+            icon->setPosition({ winSize.width / 2 - 90, winSize.height - 60 });
+            layer->addChild(icon);
+        }
+
+        CCDirector::sharedDirector()->getRunningScene()->addChild(layer, 999);
+
+        layer->runAction(CCSequence::create(
+            CCDelayTime::create(4.0f),
+            CCFadeOut::create(1.0f),
+            CCCallFunc::create([layer]() {
+                layer->removeFromParentAndCleanup(true);
+            }),
+            nullptr
+        ));
     }
 
     void checkMessages(float) {
