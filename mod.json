@@ -18,5 +18,16 @@
   "issues": {
     "info": "Report issues on the GitHub repo",
     "url": "https://github.com/BlueToadMakerr/Message-Notification/issues"
+  },
+  "settings": {
+    "check-interval": {
+      "type": "int",
+      "default": 300,
+      "min": 60,
+      "max": 600,
+      "step": 1,
+      "name": "Check Messages (Seconds)",
+      "description": "How often to check for messages\nNote: Setting the value too low can get you temporarily IP banned\n\n60 Seconds = 1 Minute\n120 Seconds = 2 Minutes\n180 Seconds = 3 Minutes\n240 Seconds = 4 Minutes\n300 Seconds = 5 Minutes\n360 Seconds = 6 Minutes\n420 Seconds = 7 Minutes\n480 Seconds = 8 Minutes\n540 Seconds = 9 Minutes\n600 Seconds = 10 Minutes"
+    }
   }
 }
