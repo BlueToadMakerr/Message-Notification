@@ -21,6 +21,20 @@ class $modify(MessageChecker, MenuLayer) {
         return elems;
     }
 
+    // Removes dynamic fields like 7:<...>
+    static std::string stripDynamicFields(const std::string& msg) {
+        auto parts = split(msg, ':');
+        std::string stripped;
+
+        for (size_t i = 0; i + 1 < parts.size(); i += 2) {
+            if (parts[i] == "7") continue; // skip dynamic field
+            if (!stripped.empty()) stripped += ":";
+            stripped += parts[i] + ":" + parts[i + 1];
+        }
+
+        return stripped;
+    }
+
     void showNotification(const std::string& title) {
         log::info("[showNotification] Showing notification with title:\n{}", title);
         AchievementNotifier::sharedState()->notifyAchievement(
@@ -79,11 +93,21 @@ class $modify(MessageChecker, MenuLayer) {
         }
 
         auto savedData = Mod::get()->getSavedValue<std::string>("last-messages", "");
-        auto previousMessages = split(savedData, '|');
+        auto previousMessagesRaw = split(savedData, '|');
+
+        // Strip dynamic fields
+        std::vector<std::string> previousMessages;
+        for (const auto& m : previousMessagesRaw)
+            previousMessages.push_back(stripDynamicFields(m));
 
         std::vector<std::string> newMessages;
+        std::vector<std::string> strippedMessages; // for saving later
+
         for (const auto& msg : currentMessages) {
-            if (std::find(previousMessages.begin(), previousMessages.end(), msg) == previousMessages.end()) {
+            auto stripped = stripDynamicFields(msg);
+            strippedMessages.push_back(stripped);
+
+            if (std::find(previousMessages.begin(), previousMessages.end(), stripped) == previousMessages.end()) {
                 newMessages.push_back(msg);
             }
         }
@@ -94,12 +118,9 @@ class $modify(MessageChecker, MenuLayer) {
             if (newMessages.size() == 1) {
                 log::info("[onMessageResponse] Handling single message...");
                 auto parts = split(newMessages[0], ':');
-                log::info("[onMessageResponse] Split parts: size = {}", parts.size());
-
                 if (parts.size() >= 5) {
                     std::string user = parts[1];
                     std::string subjectBase64 = parts[4];
-                    log::info("[onMessageResponse] User = {}, Subject (b64) = {}", user, subjectBase64);
 
                     auto decodeResult = geode::utils::base64::decode(subjectBase64);
                     std::string subject;
@@ -126,7 +147,13 @@ class $modify(MessageChecker, MenuLayer) {
             log::info("[onMessageResponse] No new messages compared to last fetch.");
         }
 
-        Mod::get()->setSavedValue("last-messages", response);
+        // Save only stripped messages
+        std::string saveData;
+        for (size_t i = 0; i < strippedMessages.size(); ++i) {
+            if (i > 0) saveData += "|";
+            saveData += strippedMessages[i];
+        }
+        Mod::get()->setSavedValue("last-messages", saveData);
     }
 
     bool init() {
