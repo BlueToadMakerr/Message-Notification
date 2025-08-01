@@ -21,36 +21,35 @@ class $modify(MessageChecker, MenuLayer) {
         return elems;
     }
 
-    // Removes dynamic fields like 7:<...>
-    static std::string stripDynamicFields(const std::string& msg) {
-        auto parts = split(msg, ':');
-        std::string stripped;
-
-        for (size_t i = 0; i + 1 < parts.size(); i += 2) {
-            if (parts[i] == "7") continue; // skip dynamic field
-            if (!stripped.empty()) stripped += ":";
-            stripped += parts[i] + ":" + parts[i + 1];
+    static std::string sanitizeMessage(const std::string& msg) {
+        std::vector<std::string> parts = split(msg, ':');
+        std::ostringstream cleaned;
+        for (size_t i = 0; i < parts.size(); i += 2) {
+            std::string key = parts[i];
+            if (key == "7" || key == "8") continue; // Skip time and read status
+            if (i + 1 < parts.size()) {
+                if (!cleaned.str().empty()) cleaned << ":";
+                cleaned << key << ":" << parts[i + 1];
+            }
         }
-
-        return stripped;
+        return cleaned.str();
     }
 
     void showNotification(const std::string& title) {
-        log::info("[showNotification] Showing notification with title:\n{}", title);
         AchievementNotifier::sharedState()->notifyAchievement(
             title.c_str(),
-            "", // No description
+            "",
             "GJ_messageIcon_001.png",
             false
         );
     }
 
     void checkMessages(float) {
-        log::info("[checkMessages] Checking for new messages...");
+        log::info("[MessageChecker] Running message check...");
 
         auto* acc = GJAccountManager::sharedState();
         if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
-            log::info("[checkMessages] Account not signed in or GJP2 missing.");
+            log::info("[MessageChecker] Account not signed in.");
             return;
         }
 
@@ -71,103 +70,86 @@ class $modify(MessageChecker, MenuLayer) {
     }
 
     void onMessageResponse(cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
-        log::info("[onMessageResponse] Network response received.");
-
         if (!resp || !resp->isSucceed()) {
-            log::info("[onMessageResponse] Request failed or null response.");
+            log::info("[onMessageResponse] Request failed.");
             return;
         }
 
-        std::string response(resp->getResponseData()->begin(), resp->getResponseData()->end());
-        log::info("[onMessageResponse] Raw response:\n{}", response);
-
-        if (response.empty() || response == "-1") {
-            log::info("[onMessageResponse] No messages found.");
+        std::string raw(resp->getResponseData()->begin(), resp->getResponseData()->end());
+        if (raw.empty() || raw == "-1") {
+            log::info("[onMessageResponse] No messages.");
             return;
         }
 
-        auto currentMessages = split(response, '|');
-        if (currentMessages.empty()) {
-            log::info("[onMessageResponse] No parsable messages.");
-            return;
+        auto currentRawMessages = split(raw, '|');
+        std::vector<std::string> currentMessages;
+        for (const auto& msg : currentRawMessages) {
+            currentMessages.push_back(sanitizeMessage(msg));
         }
 
-        auto savedData = Mod::get()->getSavedValue<std::string>("last-messages", "");
-        auto previousMessagesRaw = split(savedData, '|');
-
-        // Strip dynamic fields
-        std::vector<std::string> previousMessages;
-        for (const auto& m : previousMessagesRaw)
-            previousMessages.push_back(stripDynamicFields(m));
+        auto savedRaw = Mod::get()->getSavedValue<std::string>("last-messages", "");
+        auto savedRawMessages = split(savedRaw, '|');
+        std::vector<std::string> savedMessages;
+        for (const auto& msg : savedRawMessages) {
+            savedMessages.push_back(sanitizeMessage(msg));
+        }
 
         std::vector<std::string> newMessages;
-        std::vector<std::string> strippedMessages; // for saving later
-
         for (const auto& msg : currentMessages) {
-            auto stripped = stripDynamicFields(msg);
-            strippedMessages.push_back(stripped);
-
-            if (std::find(previousMessages.begin(), previousMessages.end(), stripped) == previousMessages.end()) {
+            if (std::find(savedMessages.begin(), savedMessages.end(), msg) == savedMessages.end()) {
                 newMessages.push_back(msg);
             }
         }
 
         if (!newMessages.empty()) {
-            log::info("[onMessageResponse] {} new message(s) detected", newMessages.size());
-
             if (newMessages.size() == 1) {
-                log::info("[onMessageResponse] Handling single message...");
+                std::string subject = "<no subject>";
+                std::string sender = "<unknown>";
+
                 auto parts = split(newMessages[0], ':');
-                if (parts.size() >= 5) {
-                    std::string user = parts[1];
-                    std::string subjectBase64 = parts[9];
-                    log::info("[onMessageResponse] Raw base64 subject: {}", subjectBase64);
-
-
-                    auto decodeResult = geode::utils::base64::decode(subjectBase64);
-                    std::string subject;
-                    if (decodeResult) {
-                        auto& decoded = decodeResult.unwrap();
-                        subject = std::string(decoded.begin(), decoded.end());
-                        log::info("[onMessageResponse] Decoded subject: {}", subject);
-                    } else {
-                        subject = "<invalid base64>";
-                        log::info("[onMessageResponse] Failed to decode subject base64");
+                for (size_t i = 0; i + 1 < parts.size(); i += 2) {
+                    if (parts[i] == "4") {
+                        std::string base64 = parts[i + 1];
+                        log::info("[onMessageResponse] Base64 subject: {}", base64);
+                        auto decodeResult = geode::utils::base64::decode(base64);
+                        if (decodeResult) {
+                            auto& decoded = decodeResult.unwrap();
+                            subject = std::string(decoded.begin(), decoded.end());
+                        } else {
+                            log::info("[onMessageResponse] Failed to decode subject: {}", base64);
+                        }
+                    } else if (parts[i] == "6") {
+                        sender = parts[i + 1];
                     }
-
-                    std::string title = fmt::format("New Message!\nSent by: {}\n{}", user, subject);
-                    showNotification(title);
-                } else {
-                    log::info("[onMessageResponse] Invalid message format, fallback notification");
-                    showNotification("New Message!");
                 }
-            } else {
-                std::string title = fmt::format("{} New Messages!", newMessages.size());
-                showNotification(title);
-            }
-        } else {
-            log::info("[onMessageResponse] No new messages compared to last fetch.");
-        }
 
-        // Save only stripped messages
-        std::string saveData;
-        for (size_t i = 0; i < strippedMessages.size(); ++i) {
-            if (i > 0) saveData += "|";
-            saveData += strippedMessages[i];
+                std::string title = fmt::format("New Message!\nSent by: {}\n{}", sender, subject);
+                showNotification(title);
+            } else {
+                showNotification(fmt::format("{} New Messages!", newMessages.size()));
+            }
+
+            // Save raw, unsanitized version for next time
+            Mod::get()->setSavedValue("last-messages", raw);
         }
-        Mod::get()->setSavedValue("last-messages", saveData);
     }
 
     bool init() {
         if (!MenuLayer::init()) return false;
 
-        log::info("[init] MessageChecker initialized.");
+        static bool hasInitialized = false;
+        if (!hasInitialized) {
+            hasInitialized = true;
 
-        int interval = std::clamp(Mod::get()->getSavedValue<int>("check-interval", 300), 60, 600);
-        log::info("[init] Using check interval (seconds): {}", interval);
+            this->schedule([=](float) {
+                int interval = std::clamp(Mod::get()->getSavedValue<int>("check-interval", 300), 60, 600);
+                log::info("[MessageChecker] Rechecking with interval: {}s", interval);
+                this->unschedule("MessageCheck");
+                this->schedule([=](float f) { this->checkMessages(f); }, interval, "MessageCheck");
+                this->checkMessages(0.f);
+            }, 1.0f, "CheckSetupOnce");
+        }
 
-        this->schedule(schedule_selector(MessageChecker::checkMessages), static_cast<float>(interval));
-        this->checkMessages(0);
         return true;
     }
 };
