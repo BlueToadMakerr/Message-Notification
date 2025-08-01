@@ -28,7 +28,7 @@ class $modify(MessageChecker, MenuLayer) {
     void showNotification(const std::string& title) {
         AchievementNotifier::sharedState()->notifyAchievement(
             title.c_str(),
-            "", // Description left empty as per your request
+            "", // Description left empty as requested
             "GJ_messageIcon_001.png",
             false
         );
@@ -74,7 +74,6 @@ class $modify(MessageChecker, MenuLayer) {
         }
 
         auto currentMessages = split(response, '|');
-
         if (currentMessages.empty()) {
             log::info("[onMessageResponse] No parsable messages.");
             return;
@@ -87,11 +86,8 @@ class $modify(MessageChecker, MenuLayer) {
         for (const auto& msg : currentMessages) {
             if (std::find(previousMessages.begin(), previousMessages.end(), msg) == previousMessages.end()) {
                 newMessages.push_back(msg);
-            } else {
-                // If you want to stop adding new messages at first repeat, uncomment break:
-                // break;
-                // But per your last instruction, we do NOT stop early, so we continue
             }
+            // We do NOT stop early, continue checking all
         }
 
         if (!m_fields->m_hasBooted) {
@@ -102,11 +98,16 @@ class $modify(MessageChecker, MenuLayer) {
                 if (parts.size() >= 5) {
                     std::string user = parts[1];
                     std::string subjectBase64 = parts[4];
-                    std::string subject = geode::utils::base64::decode(subjectBase64);
+                    auto decodeResult = geode::utils::base64::decode(subjectBase64);
+                    std::string subject;
+                    if (decodeResult) {
+                        subject = std::string(decodeResult.value().begin(), decodeResult.value().end());
+                    } else {
+                        subject = "<invalid base64>";
+                    }
                     std::string title = fmt::format("New Message!\nSent by: {}\n{}", user, subject);
                     showNotification(title);
                 } else {
-                    // fallback notification
                     showNotification("New Message!");
                 }
             } else {
