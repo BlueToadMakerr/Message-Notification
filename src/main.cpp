@@ -120,7 +120,9 @@ class $modify(MessageChecker, MenuLayer) {
                 auto parts = split(newMessages[0], ':');
                 if (parts.size() >= 5) {
                     std::string user = parts[1];
-                    std::string subjectBase64 = parts[4];
+                    std::string subjectBase64 = parts[9];
+                    log::info("[onMessageResponse] Raw base64 subject: {}", subjectBase64);
+
 
                     auto decodeResult = geode::utils::base64::decode(subjectBase64);
                     std::string subject;
