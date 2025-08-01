@@ -2,4 +2,4 @@
 
 Sends a notification every time you get a new message
 
-This checks and notifies you every 5 minutes
+This checks and notifies you for every couple minutes (change in settings). This also checks whenever you go to the main menu
