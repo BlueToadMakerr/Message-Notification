@@ -136,18 +136,26 @@ class $modify(MessageChecker, MenuLayer) {
 
     bool init() {
         if (!MenuLayer::init()) return false;
-
+    
         static bool hasInitialized = false;
         if (!hasInitialized) {
             hasInitialized = true;
 
-            this->schedule([=](float) {
+            // Delay setup slightly so the mod doesn't interfere with early menu loads
+            geode::utils::scheduleOnce([this](float) {
                 int interval = std::clamp(Mod::get()->getSavedValue<int>("check-interval", 300), 60, 600);
-                log::info("[MessageChecker] Rechecking with interval: {}s", interval);
-                this->unschedule("MessageCheck");
-                this->schedule([=](float f) { this->checkMessages(f); }, interval, "MessageCheck");
-                this->checkMessages(0.f);
-            }, 1.0f, "CheckSetupOnce");
+
+                // Clear any previous schedules
+                geode::utils::unschedule("MessageCheck", this);
+
+                // Schedule message checks with the latest interval
+                geode::utils::schedule([this](float) {
+                    int newInterval = std::clamp(Mod::get()->getSavedValue<int>("check-interval", 300), 60, 600);
+                    geode::utils::unschedule("MessageCheck", this);
+                    geode::utils::schedule([this](float f) { this->checkMessages(f); }, newInterval, "MessageCheck", this);
+                    this->checkMessages(0.f);
+                }, 1.f, "MessageInitDelay", this);
+            }, 0.5f, "MessageStartDelay", this);
         }
 
         return true;
