@@ -2,19 +2,16 @@
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/binding/AchievementNotifier.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
-#include <Geode/ui/GeodeUI.hpp>
-#include <Geode/utils/string.hpp>
 #include <Geode/utils/base64.hpp>
+#include <Geode/utils/string.hpp>
 #include <Geode/loader/Log.hpp>
 #include <Geode/cocos/extensions/network/HttpClient.h>
 
 using namespace geode::prelude;
 
-class $modify(MessageChecker, MenuLayer) {
-    struct Fields {
-        bool hasChecked = false;
-    };
+static bool s_hasBootChecked = false; // global flag, hopefully will run once per game boot
 
+class $modify(MessageChecker, MenuLayer) {
     static std::vector<std::string> split(const std::string& str, char delim) {
         std::vector<std::string> elems;
         std::stringstream ss(str);
@@ -88,7 +85,7 @@ class $modify(MessageChecker, MenuLayer) {
         std::vector<std::string> currentClean;
         for (const auto& msg : currentRaw) currentClean.push_back(cleanMessage(msg));
 
-        std::string lastSaved = Mod::get()->getSavedValue<std::string>("last-messages", "");
+        std::string lastSaved = Mod::get()->loadData("last-messages").unwrapOr("");
         auto previousClean = split(lastSaved, '|');
 
         std::vector<std::string> newMessages;
@@ -103,7 +100,7 @@ class $modify(MessageChecker, MenuLayer) {
                 auto parts = split(newMessages[0], ':');
                 if (parts.size() >= 5) {
                     std::string sender = parts[1];
-                    std::string subjectBase64 = parts[4];
+                    std::string subjectBase64 = parts[9];
 
                     auto decoded = geode::utils::base64::decode(subjectBase64);
                     std::string subject;
@@ -132,11 +129,12 @@ class $modify(MessageChecker, MenuLayer) {
             if (i > 0) cleanedSave += "|";
             cleanedSave += currentClean[i];
         }
-        Mod::get()->setSavedValue("last-messages", cleanedSave);
+        Mod::get()->saveData("last-messages", cleanedSave);
     }
 
     void runNextCheck() {
-        int interval = std::clamp(Mod::get()->getSavedValue<int>("check-interval", 300), 60, 600);
+        auto interval = Mod::get()->getSettingValue<int64_t>("check-interval").value_or(300);
+        interval = std::clamp(interval, 60LL, 600LL); // avoid invalid values
         log::info("Next check in {} seconds...", interval);
 
         auto delay = CCDelayTime::create(static_cast<float>(interval));
@@ -159,8 +157,8 @@ class $modify(MessageChecker, MenuLayer) {
     bool init() {
         if (!MenuLayer::init()) return false;
 
-        if (!m_fields->hasChecked) {
-            m_fields->hasChecked = true;
+        if (!s_hasBootChecked) {
+            s_hasBootChecked = true;
             startMessageChecker();
         }
 
