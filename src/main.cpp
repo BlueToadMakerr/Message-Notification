@@ -107,8 +107,9 @@ class $modify(MessageChecker, MenuLayer) {
 
                     auto decoded = geode::utils::base64::decode(subjectBase64);
                     std::string subject;
-                    if (decoded.has_value()) {
-                        subject = std::string(decoded->begin(), decoded->end());
+                    if (decoded.isOk()) {
+                        auto vec = decoded.unwrap();
+                        subject = std::string(vec.begin(), vec.end());
                     } else {
                         subject = "<Invalid base64>";
                         log::info("Failed to decode subject base64: {}", subjectBase64);
