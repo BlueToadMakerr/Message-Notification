@@ -145,31 +145,33 @@ class $modify(MessageChecker, MenuLayer) {
         log::info("saved current message state to settings");
     }
 
-    void startIntervalScheduler() {
+    void scheduleNextCheck() {
         if (Fields::scheduled) {
-            log::info("scheduler already running");
+            log::info("scheduler already running, skipping");
             return;
         }
-
-        this->schedule([this](float) {
-            int interval = 300;
-            auto setting = Mod::get()->getSetting("check-interval");
-            if (auto intVal = std::get_if<int>(&setting)) {
-                interval = std::clamp(*intVal, 60, 600);
-            }
-
-            auto now = std::chrono::steady_clock::now();
-            if (now >= Fields::nextCheck) {
-                checkMessages();
-                Fields::nextCheck = now + std::chrono::seconds(interval);
-                log::info("next check scheduled in {} seconds", interval);
-            } else {
-                auto remaining = std::chrono::duration_cast<std::chrono::seconds>(Fields::nextCheck - now).count();
-                log::info("delayed check: next in {} seconds", remaining);
-            }
-        }, "msgCheckTimer", 5.0f);  // runs every 5 seconds
-
         Fields::scheduled = true;
+
+        // Schedule to call onScheduledTick every 1 second (adjust as desired)
+        this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
+    }
+
+    void onScheduledTick(float) {
+        // Check interval from settings with fallback
+        int interval = Mod::get()->getSettingValue<int>("check-interval", 300);
+        interval = std::clamp(interval, 60, 600);
+
+        auto now = std::chrono::steady_clock::now();
+
+        if (now >= Fields::nextCheck) {
+            log::info("interval elapsed, performing message check");
+            checkMessages();
+            Fields::nextCheck = now + std::chrono::seconds(interval);
+            log::info("next check scheduled in {} seconds", interval);
+        } else {
+            auto remain = std::chrono::duration_cast<std::chrono::seconds>(Fields::nextCheck - now).count();
+            log::info("waiting for next check: {} seconds left", remain);
+        }
     }
 
     bool init() {
@@ -177,8 +179,7 @@ class $modify(MessageChecker, MenuLayer) {
 
         log::info("MenuLayer init");
 
-        // Always try to run delayed checks and start a scheduler
-        startIntervalScheduler();
+        scheduleNextCheck();
 
         return true;
     }
