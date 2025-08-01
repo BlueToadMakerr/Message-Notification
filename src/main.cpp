@@ -11,10 +11,6 @@
 using namespace geode::prelude;
 
 class $modify(MessageChecker, MenuLayer) {
-    struct Fields {
-        bool m_hasBooted = false;
-    };
-
     static std::vector<std::string> split(const std::string& str, char delim) {
         std::vector<std::string> elems;
         std::stringstream ss(str);
@@ -26,9 +22,10 @@ class $modify(MessageChecker, MenuLayer) {
     }
 
     void showNotification(const std::string& title) {
+        log::info("[showNotification] Showing notification with title:\n{}", title);
         AchievementNotifier::sharedState()->notifyAchievement(
             title.c_str(),
-            "",
+            "", // No description
             "GJ_messageIcon_001.png",
             false
         );
@@ -60,43 +57,38 @@ class $modify(MessageChecker, MenuLayer) {
     }
 
     void onMessageResponse(cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
-        log::info("[onMessageResponse] Response callback triggered");
+        log::info("[onMessageResponse] Network response received.");
 
         if (!resp || !resp->isSucceed()) {
-            log::info("[onMessageResponse] Request failed or response is null.");
+            log::info("[onMessageResponse] Request failed or null response.");
             return;
         }
 
         std::string response(resp->getResponseData()->begin(), resp->getResponseData()->end());
-        log::info("[onMessageResponse] Raw response: {}", response);
+        log::info("[onMessageResponse] Raw response:\n{}", response);
 
         if (response.empty() || response == "-1") {
-            log::info("[onMessageResponse] Response is empty or -1 (no messages).");
+            log::info("[onMessageResponse] No messages found.");
             return;
         }
 
         auto currentMessages = split(response, '|');
-        log::info("[onMessageResponse] Parsed {} messages from response", currentMessages.size());
+        if (currentMessages.empty()) {
+            log::info("[onMessageResponse] No parsable messages.");
+            return;
+        }
 
         auto savedData = Mod::get()->getSavedValue<std::string>("last-messages", "");
         auto previousMessages = split(savedData, '|');
-        log::info("[onMessageResponse] Parsed {} saved messages", previousMessages.size());
 
         std::vector<std::string> newMessages;
         for (const auto& msg : currentMessages) {
-            log::info("[onMessageResponse] Checking message: {}", msg);
             if (std::find(previousMessages.begin(), previousMessages.end(), msg) == previousMessages.end()) {
-                log::info("[onMessageResponse] Found new message!");
                 newMessages.push_back(msg);
-            } else {
-                log::info("[onMessageResponse] Message is already known.");
             }
         }
 
-        if (!m_fields->m_hasBooted) {
-            log::info("[onMessageResponse] First run, skipping notification");
-            m_fields->m_hasBooted = true;
-        } else if (!newMessages.empty()) {
+        if (!newMessages.empty()) {
             log::info("[onMessageResponse] {} new message(s) detected", newMessages.size());
 
             if (newMessages.size() == 1) {
@@ -127,15 +119,13 @@ class $modify(MessageChecker, MenuLayer) {
                     showNotification("New Message!");
                 }
             } else {
-                log::info("[onMessageResponse] Showing multi-message notification");
                 std::string title = fmt::format("{} New Messages!", newMessages.size());
                 showNotification(title);
             }
         } else {
-            log::info("[onMessageResponse] No new messages detected");
+            log::info("[onMessageResponse] No new messages compared to last fetch.");
         }
 
-        log::info("[onMessageResponse] Saving current messages to persistent storage");
         Mod::get()->setSavedValue("last-messages", response);
     }
 
@@ -145,7 +135,7 @@ class $modify(MessageChecker, MenuLayer) {
         log::info("[init] MessageChecker initialized.");
 
         int interval = std::clamp(Mod::get()->getSavedValue<int>("check-interval", 300), 60, 600);
-        log::info("[init] Scheduling check every {} seconds", interval);
+        log::info("[init] Using check interval (seconds): {}", interval);
 
         this->schedule(schedule_selector(MessageChecker::checkMessages), static_cast<float>(interval));
         this->checkMessages(0);
