@@ -4,6 +4,7 @@
 #include <Geode/binding/GJAccountManager.hpp>
 #include <Geode/ui/GeodeUI.hpp>
 #include <Geode/utils/string.hpp>
+#include <Geode/utils/base64.hpp>
 #include <Geode/loader/Log.hpp>
 #include <Geode/cocos/extensions/network/HttpClient.h>
 
@@ -24,30 +25,10 @@ class $modify(MessageChecker, MenuLayer) {
         return elems;
     }
 
-    static std::string serializeMessages(const std::vector<std::tuple<std::string, std::string, std::string>>& messages) {
-        std::string out;
-        for (const auto& [user, subject, content] : messages) {
-            out += user + "%%" + subject + "%%" + content + "||";
-        }
-        return out;
-    }
-
-    static std::vector<std::tuple<std::string, std::string, std::string>> deserializeMessages(const std::string& data) {
-        std::vector<std::tuple<std::string, std::string, std::string>> result;
-        auto entries = split(data, '|');
-        for (auto& e : entries) {
-            if (e.empty()) continue;
-            auto parts = split(e, '%');
-            if (parts.size() < 6) continue; // each %% is split into 2
-            result.emplace_back(parts[0], parts[2], parts[4]);
-        }
-        return result;
-    }
-
     void showNotification(const std::string& title) {
         AchievementNotifier::sharedState()->notifyAchievement(
             title.c_str(),
-            "",
+            "", // Description left empty as per your request
             "GJ_messageIcon_001.png",
             false
         );
@@ -62,7 +43,10 @@ class $modify(MessageChecker, MenuLayer) {
             return;
         }
 
-        std::string postData = fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2);
+        std::string postData = fmt::format(
+            "accountID={}&gjp2={}&secret=Wmfd2893gb7",
+            acc->m_accountID, acc->m_GJP2
+        );
 
         auto* req = new cocos2d::extension::CCHttpRequest();
         req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");
@@ -89,14 +73,7 @@ class $modify(MessageChecker, MenuLayer) {
             return;
         }
 
-        auto rawMessages = split(response, '|');
-        std::vector<std::tuple<std::string, std::string, std::string>> currentMessages;
-
-        for (auto& raw : rawMessages) {
-            auto parts = split(raw, ':');
-            if (parts.size() < 4) continue;
-            currentMessages.emplace_back(parts[1], parts[2], parts[3]);
-        }
+        auto currentMessages = split(response, '|');
 
         if (currentMessages.empty()) {
             log::info("[onMessageResponse] No parsable messages.");
@@ -104,32 +81,41 @@ class $modify(MessageChecker, MenuLayer) {
         }
 
         auto savedData = Mod::get()->getSavedValue<std::string>("last-messages", "");
-        auto previousMessages = deserializeMessages(savedData);
+        auto previousMessages = split(savedData, '|');
 
-        size_t newMsgCount = 0;
-        for (auto& curMsg : currentMessages) {
-            if (std::find(previousMessages.begin(), previousMessages.end(), curMsg) == previousMessages.end()) {
-                ++newMsgCount;
+        std::vector<std::string> newMessages;
+        for (const auto& msg : currentMessages) {
+            if (std::find(previousMessages.begin(), previousMessages.end(), msg) == previousMessages.end()) {
+                newMessages.push_back(msg);
             } else {
-                break;
+                // If you want to stop adding new messages at first repeat, uncomment break:
+                // break;
+                // But per your last instruction, we do NOT stop early, so we continue
             }
         }
 
         if (!m_fields->m_hasBooted) {
             m_fields->m_hasBooted = true;
-        } else if (newMsgCount > 0) {
-            if (newMsgCount == 1) {
-                auto& [user, subject, _] = currentMessages[0];
-                std::string title = fmt::format("New Message!\nSent by: {}\n{}", user, subject);
-                showNotification(title);
+        } else if (!newMessages.empty()) {
+            if (newMessages.size() == 1) {
+                auto parts = split(newMessages[0], ':');
+                if (parts.size() >= 5) {
+                    std::string user = parts[1];
+                    std::string subjectBase64 = parts[4];
+                    std::string subject = geode::utils::base64::decode(subjectBase64);
+                    std::string title = fmt::format("New Message!\nSent by: {}\n{}", user, subject);
+                    showNotification(title);
+                } else {
+                    // fallback notification
+                    showNotification("New Message!");
+                }
             } else {
-                std::string title = fmt::format("{} New Messages!", newMsgCount);
+                std::string title = fmt::format("{} New Messages!", newMessages.size());
                 showNotification(title);
             }
         }
 
-        std::string serialized = serializeMessages(currentMessages);
-        Mod::get()->setSavedValue("last-messages", serialized);
+        Mod::get()->setSavedValue("last-messages", response);
     }
 
     bool init() {
