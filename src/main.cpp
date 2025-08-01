@@ -2,18 +2,20 @@
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/binding/AchievementNotifier.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
+#include <Geode/loader/Log.hpp>
 #include <Geode/utils/base64.hpp>
 #include <Geode/utils/string.hpp>
-#include <Geode/loader/Log.hpp>
+#include <Geode/ui/GeodeUI.hpp>
 #include <Geode/cocos/extensions/network/HttpClient.h>
 
 using namespace geode::prelude;
 
 class $modify(MessageChecker, MenuLayer) {
     struct Fields {
-        bool m_hasChecked = false;
+        bool hasChecked = false;
     };
 
+    // Utility to split strings
     static std::vector<std::string> split(const std::string& str, char delim) {
         std::vector<std::string> elems;
         std::stringstream ss(str);
@@ -24,24 +26,24 @@ class $modify(MessageChecker, MenuLayer) {
         return elems;
     }
 
-    static std::string sanitizeMessage(const std::string& msg) {
-        auto parts = split(msg, ':');
-        std::stringstream sanitized;
-
-        // Reconstruct message excluding tags 7 (time) and 8 (read status)
-        for (size_t i = 0; i + 1 < parts.size(); i += 2) {
-            const std::string& key = parts[i];
-            const std::string& val = parts[i + 1];
-            if (key != "7" && key != "8") {
-                sanitized << key << ":" << val << ":";
+    // Remove time and read tags before saving
+    static std::string cleanMessageString(const std::string& raw) {
+        std::vector<std::string> messages = split(raw, '|');
+        std::vector<std::string> cleaned;
+        for (auto& msg : messages) {
+            auto parts = split(msg, ':');
+            std::string cleanedMsg;
+            for (size_t i = 0; i < parts.size(); i += 2) {
+                if (parts[i] == "7" || parts[i] == "8") continue;
+                if (i + 1 < parts.size()) {
+                    cleanedMsg += parts[i] + ":" + parts[i + 1] + ":";
+                }
             }
+            if (!cleanedMsg.empty() && cleanedMsg.back() == ':')
+                cleanedMsg.pop_back();
+            cleaned.push_back(cleanedMsg);
         }
-
-        std::string result = sanitized.str();
-        if (!result.empty() && result.back() == ':') {
-            result.pop_back();
-        }
-        return result;
+        return geode::utils::string::join(cleaned, "|");
     }
 
     void showNotification(const std::string& title) {
@@ -55,6 +57,11 @@ class $modify(MessageChecker, MenuLayer) {
 
     void checkMessages(float) {
         log::info("[MessageChecker] Starting message check...");
+
+        // Dynamically reload check interval (for rescheduling)
+        int interval = std::clamp(Mod::get()->getSavedValue<int>("check-interval", 300), 60, 600);
+        this->unschedule(schedule_selector(MessageChecker::checkMessages));
+        this->schedule(schedule_selector(MessageChecker::checkMessages), static_cast<float>(interval));
 
         auto* acc = GJAccountManager::sharedState();
         if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
@@ -72,38 +79,33 @@ class $modify(MessageChecker, MenuLayer) {
         req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
         req->setRequestData(postData.c_str(), postData.size());
         req->setTag("MessageCheck");
-
         req->setResponseCallback(this, SEL_HttpResponse(&MessageChecker::onMessageResponse));
         cocos2d::extension::CCHttpClient::getInstance()->send(req);
         req->release();
     }
 
     void onMessageResponse(cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
-        log::info("[onMessageResponse] Network response received");
+        log::info("[MessageChecker] Response received.");
 
         if (!resp || !resp->isSucceed()) {
-            log::info("[onMessageResponse] Request failed.");
+            log::info("[MessageChecker] Request failed.");
             return;
         }
 
         std::string rawResponse(resp->getResponseData()->begin(), resp->getResponseData()->end());
         if (rawResponse.empty() || rawResponse == "-1") {
-            log::info("[onMessageResponse] No messages.");
+            log::info("[MessageChecker] No messages returned.");
             return;
         }
 
-        auto rawMessages = split(rawResponse, '|');
-        std::vector<std::string> sanitizedMessages;
-        for (const auto& m : rawMessages) {
-            sanitizedMessages.push_back(sanitizeMessage(m));
-        }
-
+        std::string cleanedResponse = cleanMessageString(rawResponse);
+        auto currentMessages = split(cleanedResponse, '|');
         auto savedRaw = Mod::get()->getSavedValue<std::string>("last-messages", "");
-        auto savedMessages = split(savedRaw, '|');
+        auto previousMessages = split(savedRaw, '|');
 
         std::vector<std::string> newMessages;
-        for (const auto& msg : sanitizedMessages) {
-            if (std::find(savedMessages.begin(), savedMessages.end(), msg) == savedMessages.end()) {
+        for (auto& msg : currentMessages) {
+            if (std::find(previousMessages.begin(), previousMessages.end(), msg) == previousMessages.end()) {
                 newMessages.push_back(msg);
             }
         }
@@ -116,13 +118,12 @@ class $modify(MessageChecker, MenuLayer) {
 
                 for (size_t i = 0; i + 1 < parts.size(); i += 2) {
                     if (parts[i] == "6") sender = parts[i + 1];
-                    else if (parts[i] == "4") {
-                        auto base64 = parts[i + 1];
-                        log::info("[onMessageResponse] Raw base64 subject: {}", base64);
-                        auto decoded = geode::utils::base64::decode(base64);
+                    if (parts[i] == "4") {
+                        std::string encoded = parts[i + 1];
+                        log::info("[MessageChecker] Raw base64: {}", encoded);
+                        auto decoded = geode::utils::base64::decode(encoded);
                         if (decoded) {
-                            auto& data = decoded.unwrap();
-                            subject = std::string(data.begin(), data.end());
+                            subject = std::string(decoded.unwrap().begin(), decoded.unwrap().end());
                         } else {
                             subject = "<invalid base64>";
                         }
@@ -132,38 +133,24 @@ class $modify(MessageChecker, MenuLayer) {
                 std::string title = fmt::format("New Message!\nSent by: {}\n{}", sender, subject);
                 showNotification(title);
             } else {
-                std::string title = fmt::format("{} New Messages!", newMessages.size());
-                showNotification(title);
+                showNotification(fmt::format("{} New Messages!", newMessages.size()));
             }
         }
 
-        // Save current sanitized messages
-        std::string toSave;
-        for (size_t i = 0; i < sanitizedMessages.size(); ++i) {
-            toSave += sanitizedMessages[i];
-            if (i + 1 < sanitizedMessages.size()) toSave += "|";
-        }
-
-        Mod::get()->setSavedValue("last-messages", toSave);
+        Mod::get()->setSavedValue("last-messages", cleanedResponse);
     }
 
     bool init() {
         if (!MenuLayer::init()) return false;
 
-        if (!m_fields->m_hasChecked) {
-            m_fields->m_hasChecked = true;
+        if (!m_fields->hasChecked) {
+            m_fields->hasChecked = true;
 
-            log::info("[init] Initializing and scheduling message checks.");
+            log::info("[MessageChecker] Initializing message checker...");
 
-            // Schedule the check based on the stored setting
-            this->schedule([this](float) {
-                this->checkMessages(0);
-
-                // Reschedule with latest interval
-                this->unscheduleAllSelectors();
-                int newInterval = std::clamp(Mod::get()->getSavedValue<int>("check-interval", 300), 60, 600);
-                this->schedule(schedule_selector(MessageChecker::checkMessages), static_cast<float>(newInterval));
-            }, 0.1f, 0, 0); // Initial delay of 0.1s
+            int interval = std::clamp(Mod::get()->getSavedValue<int>("check-interval", 300), 60, 600);
+            this->schedule(schedule_selector(MessageChecker::checkMessages), static_cast<float>(interval));
+            this->checkMessages(0);
         }
 
         return true;
