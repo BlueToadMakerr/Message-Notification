@@ -5,6 +5,8 @@
 #include <Geode/utils/string.hpp>
 #include <Geode/utils/base64.hpp>
 #include <Geode/loader/Log.hpp>
+#include <Geode/cocos/extensions/network/HttpClient.h>
+
 #include <chrono>
 
 using namespace geode::prelude;
@@ -12,7 +14,7 @@ using namespace geode::prelude;
 class $modify(MessageChecker, MenuLayer) {
     struct Fields {
         inline static std::chrono::steady_clock::time_point nextCheck = std::chrono::steady_clock::now();
-        inline static bool scheduled = false;
+        inline static bool bootChecked = false;
     };
 
     static std::vector<std::string> split(const std::string& str, char delim) {
@@ -25,12 +27,13 @@ class $modify(MessageChecker, MenuLayer) {
         return elems;
     }
 
+    // Remove the time tags "7:" and "8:" and their values from the message string
     static std::string cleanMessage(const std::string& msg) {
         std::vector<std::string> parts = split(msg, ':');
         std::string cleaned;
         for (size_t i = 0; i < parts.size(); ++i) {
             if (parts[i] == "7" || parts[i] == "8") {
-                ++i;
+                ++i; // Skip tag and its value
                 continue;
             }
             if (!cleaned.empty()) cleaned += ":";
@@ -41,7 +44,10 @@ class $modify(MessageChecker, MenuLayer) {
 
     void showNotification(const std::string& title) {
         AchievementNotifier::sharedState()->notifyAchievement(
-            title.c_str(), "", "GJ_messageIcon_001.png", false
+            title.c_str(),
+            "",
+            "GJ_messageIcon_001.png",
+            false
         );
         log::info("notified user with title: {}", title);
     }
@@ -109,7 +115,7 @@ class $modify(MessageChecker, MenuLayer) {
 
             if (newMessages.size() == 1) {
                 auto parts = split(newMessages[0], ':');
-                if (parts.size() >= 10) {
+                if (parts.size() > 9) {
                     std::string sender = parts[1];
                     std::string subjectBase64 = parts[9];
                     log::info("base64 subject: {}", subjectBase64);
@@ -127,6 +133,8 @@ class $modify(MessageChecker, MenuLayer) {
 
                     std::string notif = fmt::format("New Message!\nSent by: {}\n{}", sender, subject);
                     showNotification(notif);
+                } else {
+                    showNotification("New Message!");
                 }
             } else {
                 showNotification(fmt::format("{} New Messages!", newMessages.size()));
@@ -135,31 +143,25 @@ class $modify(MessageChecker, MenuLayer) {
             log::info("no new messages compared to saved list");
         }
 
+        // Save cleaned current messages joined by '|'
         std::string save;
         for (size_t i = 0; i < currentClean.size(); ++i) {
             if (i > 0) save += "|";
             save += currentClean[i];
         }
-
         Mod::get()->setSavedValue("last-messages", save);
         log::info("saved current message state to settings");
     }
 
-    void scheduleNextCheck() {
-        if (Fields::scheduled) {
-            log::info("scheduler already running, skipping");
-            return;
-        }
-        Fields::scheduled = true;
-
-        // Schedule to call onScheduledTick every 1 second (adjust as desired)
-        this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
-    }
-
     void onScheduledTick(float) {
-        // Check interval from settings with fallback
-        int interval = Mod::get()->getSettingValue<int>("check-interval", 300);
-        interval = std::clamp(interval, 60, 600);
+        int interval = 300; // default interval fallback
+        try {
+            interval = Mod::get()->getSettingValue<int>("check-interval");
+            interval = std::clamp(interval, 60, 600);
+            log::info("using check interval from settings: {}", interval);
+        } catch (...) {
+            log::info("failed to get check-interval setting, using default 300");
+        }
 
         auto now = std::chrono::steady_clock::now();
 
@@ -179,7 +181,16 @@ class $modify(MessageChecker, MenuLayer) {
 
         log::info("MenuLayer init");
 
-        scheduleNextCheck();
+        if (!Fields::bootChecked) {
+            Fields::bootChecked = true;
+            log::info("boot sequence starting");
+
+            // schedule the tick function every second
+            this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
+            onScheduledTick(0);  // run immediately on boot
+        } else {
+            log::info("boot already done, skipping scheduling");
+        }
 
         return true;
     }
