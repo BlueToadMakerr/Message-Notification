@@ -1,36 +1,22 @@
 #include <Geode/Geode.hpp>
-#include <Geode/modify/CCScene.hpp>
+#include <Geode/loader/Mod.hpp>
 #include <Geode/binding/AchievementNotifier.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
-#include <Geode/utils/string.hpp>
-#include <Geode/utils/base64.hpp>
 #include <Geode/loader/Log.hpp>
+#include <Geode/utils/base64.hpp>
+#include <Geode/utils/string.hpp>
 #include <Geode/cocos/extensions/network/HttpClient.h>
+#include <cocos2d.h>
 
 #include <chrono>
+#include <sstream>
+#include <algorithm>
 
 using namespace geode::prelude;
 
-class MessageChecker : public cocos2d::CCNode {
-public:
-    static MessageChecker* create() {
-        auto ret = new MessageChecker();
-        if (ret && ret->init()) {
-            ret->autorelease();
-            return ret;
-        }
-        CC_SAFE_DELETE(ret);
-        return nullptr;
-    }
-
-    bool init() override {
-        this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
-        onScheduledTick(0);
-        return true;
-    }
-
-private:
-    std::chrono::steady_clock::time_point nextCheck = std::chrono::steady_clock::now();
+class MessageCheckerLayer : public cocos2d::CCLayer {
+protected:
+    std::chrono::steady_clock::time_point m_nextCheck;
 
     static std::vector<std::string> split(const std::string& str, char delim) {
         std::vector<std::string> elems;
@@ -47,7 +33,7 @@ private:
         std::string cleaned;
         for (size_t i = 0; i < parts.size(); ++i) {
             if (parts[i] == "7" || parts[i] == "8") {
-                ++i; // skip tag value
+                ++i;
                 continue;
             }
             if (!cleaned.empty()) cleaned += ":";
@@ -58,14 +44,15 @@ private:
 
     void showNotification(const std::string& title) {
         AchievementNotifier::sharedState()->notifyAchievement(
-            title.c_str(), "", "GJ_messageIcon_001.png", false
+            title.c_str(),
+            "",
+            "GJ_messageIcon_001.png",
+            false
         );
         log::info("notified user with title: {}", title);
     }
 
     void checkMessages() {
-        log::info("checking for new messages");
-
         auto* acc = GJAccountManager::sharedState();
         if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
             log::info("not logged in, skipping check");
@@ -73,18 +60,24 @@ private:
         }
 
         std::string postData = fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2);
+        log::info("sending HTTP request with data: {}", postData);
+
         auto* req = new cocos2d::extension::CCHttpRequest();
         req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");
         req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
         req->setRequestData(postData.c_str(), postData.length());
         req->setTag("MessageCheck");
-        req->setResponseCallback(this, SEL_HttpResponse(&MessageChecker::onMessageResponse));
+
+        req->setResponseCallback(this, SEL_HttpResponse(&MessageCheckerLayer::onMessageResponse));
         cocos2d::extension::CCHttpClient::getInstance()->send(req);
         req->release();
     }
 
     void onMessageResponse(cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
-        if (!resp || !resp->isSucceed()) return;
+        if (!resp || !resp->isSucceed()) {
+            log::info("network request failed");
+            return;
+        }
 
         std::string raw(resp->getResponseData()->begin(), resp->getResponseData()->end());
         if (raw.empty() || raw == "-1") return;
@@ -108,21 +101,27 @@ private:
         if (!newMessages.empty()) {
             if (newMessages.size() == 1) {
                 auto parts = split(newMessages[0], ':');
-                std::string subject = "<Invalid base64>";
                 if (parts.size() > 9) {
-                    auto decoded = geode::utils::base64::decode(parts[9]);
+                    std::string sender = parts[1];
+                    std::string subjectBase64 = parts[9];
+                    std::string subject;
+                    auto decoded = geode::utils::base64::decode(subjectBase64);
                     if (decoded.isOk()) {
                         auto vec = decoded.unwrap();
                         subject = std::string(vec.begin(), vec.end());
+                    } else {
+                        subject = "<Invalid base64>";
                     }
+                    showNotification(fmt::format("New Message!\nSent by: {}\n{}", sender, subject));
+                } else {
+                    showNotification("New Message!");
                 }
-                std::string notif = fmt::format("New Message!\nSent by: {}\n{}", parts[1], subject);
-                showNotification(notif);
             } else {
                 showNotification(fmt::format("{} New Messages!", newMessages.size()));
             }
         }
 
+        // Save new messages
         std::string save;
         for (size_t i = 0; i < currentClean.size(); ++i) {
             if (i > 0) save += "|";
@@ -131,7 +130,7 @@ private:
         Mod::get()->setSavedValue("last-messages", save);
     }
 
-    void onScheduledTick(float) {
+    void tick(float) {
         int interval = 300;
         try {
             interval = Mod::get()->getSettingValue<int>("check-interval");
@@ -139,23 +138,43 @@ private:
         } catch (...) {}
 
         auto now = std::chrono::steady_clock::now();
-        if (now >= nextCheck) {
+        if (now >= m_nextCheck) {
             checkMessages();
-            nextCheck = now + std::chrono::seconds(interval);
+            m_nextCheck = now + std::chrono::seconds(interval);
         }
+    }
+
+public:
+    static MessageCheckerLayer* create() {
+        auto ret = new MessageCheckerLayer();
+        if (ret && ret->init()) {
+            ret->autorelease();
+            return ret;
+        }
+        CC_SAFE_DELETE(ret);
+        return nullptr;
+    }
+
+    bool init() override {
+        if (!CCLayer::init()) return false;
+        m_nextCheck = std::chrono::steady_clock::now();
+        this->schedule(schedule_selector(MessageCheckerLayer::tick), 1.0f);
+        return true;
     }
 };
 
-// Inject MessageChecker into every new scene
-class $modify(SceneChecker, cocos2d::CCScene) {
-    void onEnter() {
-        CCScene::onEnter();
+// Attach the layer once at game boot
+class $modify(MenuLayerHook, MenuLayer) {
+    bool init() {
+        if (!MenuLayer::init()) return false;
 
-        if (!this->getChildByID("message-checker"_spr)) {
-            log::info("Adding MessageChecker to scene: {}", typeid(*this).name());
-            auto checker = MessageChecker::create();
-            checker->setID("message-checker"_spr);
-            this->addChild(checker, 9999);
+        if (!CCDirector::sharedDirector()->getRunningScene()->getChildByID("MessageCheckerLayer")) {
+            auto layer = MessageCheckerLayer::create();
+            layer->setID("MessageCheckerLayer");
+            CCDirector::sharedDirector()->getRunningScene()->addChild(layer, 9999);
+            log::info("MessageCheckerLayer added to scene.");
         }
+
+        return true;
     }
 };
