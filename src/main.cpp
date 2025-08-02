@@ -1,22 +1,26 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/modify/LevelSelectLayer.hpp>
-#include <Geode/modify/GJGarageLayer.hpp>
-#include <Geode/modify/GJShopLayer.hpp>
+#include <Geode/modify/GjGarageLayer.hpp>
+#include <Geode/modify/GjShopLayer.hpp>
 #include <Geode/modify/CreatorLayer.hpp>
 #include <Geode/modify/LevelBrowserLayer.hpp>
-#include <Geode/modify/LevelInfoLayer.hpp>
-#include <Geode/modify/LevelEditorLayer.hpp>
+#include <Geode/modify/LevelClearLayer.hpp>
+#include <Geode/modify/LevelEditorPauseLayer.hpp>
+#include <Geode/modify/LevelLeaderboardLayer.hpp>
+#include <Geode/modify/LeaderboardLayer.hpp>
+#include <Geode/modify/LevelsLayer.hpp>
+#include <Geode/modify/LoadingLayer.hpp>
+#include <Geode/modify/MapLayer.hpp>
+#include <Geode/modify/MessageLayer.hpp>
+#include <Geode/modify/NewgroundsLoginLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
-#include <Geode/modify/SecretRewardsLayer.hpp>
-#include <Geode/modify/SecretLayer.hpp>
-#include <Geode/modify/SecretLayer2.hpp>
-#include <Geode/modify/SecretLayer3.hpp>
-#include <Geode/modify/SecretLayer4.hpp>
-#include <Geode/modify/SecretLayer5.hpp>
-#include <Geode/modify/LevelAreaInnerLayer.hpp>
-#include <Geode/modify/GauntletSelectLayer.hpp>
-#include <Geode/modify/GauntletLayer.hpp>
+#include <Geode/modify/ProfilePage.hpp>
+#include <Geode/modify/PurchaseLayer.hpp>
+#include <Geode/modify/SearchLayer.hpp>
+#include <Geode/modify/SetLayer.hpp>
+#include <Geode/modify/StatisticsLayer.hpp>
+#include <Geode/modify/UserInfoLayer.hpp>
 
 #include <Geode/binding/AchievementNotifier.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
@@ -26,32 +30,18 @@
 #include <Geode/cocos/extensions/network/HttpClient.h>
 
 #include <chrono>
+#include <vector>
+#include <sstream>
+#include <algorithm>
 
 using namespace geode::prelude;
 
-#define CHECKER_INIT(LayerName) \
-    bool init() { \
-        if (!LayerName::init()) return false; \
-        log::info("{} init", #LayerName); \
-        if (!Fields::bootChecked) { \
-            Fields::bootChecked = true; \
-            log::info("boot sequence starting"); \
-            this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f); \
-            onScheduledTick(0); \
-        } else { \
-            log::info("boot already done, skipping init check and re-running the schedule"); \
-            this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f); \
-        } \
-        return true; \
-    }
-
-class MessageCheckerBase {
+class MessageCheckerBase : public cocos2d::Ref {
 protected:
-    struct Fields {
-        inline static std::chrono::steady_clock::time_point nextCheck = std::chrono::steady_clock::now();
-        inline static bool bootChecked = false;
-    };
+    std::chrono::steady_clock::time_point nextCheck = std::chrono::steady_clock::now();
+    bool bootChecked = false;
 
+public:
     static std::vector<std::string> split(const std::string& str, char delim) {
         std::vector<std::string> elems;
         std::stringstream ss(str);
@@ -63,11 +53,11 @@ protected:
     }
 
     static std::string cleanMessage(const std::string& msg) {
-        std::vector<std::string> parts = split(msg, ':');
+        auto parts = split(msg, ':');
         std::string cleaned;
         for (size_t i = 0; i < parts.size(); ++i) {
             if (parts[i] == "7" || parts[i] == "8") {
-                ++i;
+                ++i; // skip tag and its value
                 continue;
             }
             if (!cleaned.empty()) cleaned += ":";
@@ -77,7 +67,12 @@ protected:
     }
 
     void showNotification(const std::string& title) {
-        AchievementNotifier::sharedState()->notifyAchievement(title.c_str(), "", "GJ_messageIcon_001.png", false);
+        AchievementNotifier::sharedState()->notifyAchievement(
+            title.c_str(),
+            "",
+            "GJ_messageIcon_001.png",
+            false
+        );
         log::info("notified user with title: {}", title);
     }
 
@@ -99,13 +94,17 @@ protected:
         req->setRequestData(postData.c_str(), postData.length());
         req->setTag("MessageCheck");
 
-        req->setResponseCallback(this, SEL_HttpResponse(&MessageCheckerBase::onMessageResponse));
+        req->setResponseCallback([this](cocos2d::extension::CCHttpClient* client, cocos2d::extension::CCHttpResponse* resp) {
+            this->onMessageResponse(client, resp);
+        });
+
         cocos2d::extension::CCHttpClient::getInstance()->send(req);
         req->release();
     }
 
     void onMessageResponse(cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
         log::info("received response from server");
+
         if (!resp || !resp->isSucceed()) {
             log::info("network request failed or was null");
             return;
@@ -140,12 +139,14 @@ protected:
 
         if (!newMessages.empty()) {
             log::info("total new messages: {}", newMessages.size());
+
             if (newMessages.size() == 1) {
                 auto parts = split(newMessages[0], ':');
                 if (parts.size() > 9) {
                     std::string sender = parts[1];
                     std::string subjectBase64 = parts[9];
                     log::info("base64 subject: {}", subjectBase64);
+
                     auto decoded = geode::utils::base64::decode(subjectBase64);
                     std::string subject;
                     if (decoded.isOk()) {
@@ -156,7 +157,9 @@ protected:
                         subject = "<Invalid base64>";
                         log::info("failed to decode base64 subject");
                     }
-                    showNotification(fmt::format("New Message!\nSent by: {}\n{}", sender, subject));
+
+                    std::string notif = fmt::format("New Message!\nSent by: {}\n{}", sender, subject);
+                    showNotification(notif);
                 } else {
                     showNotification("New Message!");
                 }
@@ -177,7 +180,7 @@ protected:
     }
 
     void onScheduledTick(float) {
-        int interval = 300;
+        int interval = 300; // fallback default
         try {
             interval = Mod::get()->getSettingValue<int>("check-interval");
             interval = std::clamp(interval, 60, 600);
@@ -187,38 +190,60 @@ protected:
         }
 
         auto now = std::chrono::steady_clock::now();
-        if (now >= Fields::nextCheck) {
+
+        if (now >= nextCheck) {
             log::info("interval elapsed, performing message check");
             checkMessages();
-            Fields::nextCheck = now + std::chrono::seconds(interval);
+            nextCheck = now + std::chrono::seconds(interval);
             log::info("next check scheduled in {} seconds", interval);
         } else {
-            auto remain = std::chrono::duration_cast<std::chrono::seconds>(Fields::nextCheck - now).count();
+            auto remain = std::chrono::duration_cast<std::chrono::seconds>(nextCheck - now).count();
             log::info("waiting for next check: {} seconds left", remain);
         }
     }
 };
 
-#define MAKE_MESSAGE_CHECKER(LayerName) \
-class $modify(MessageChecker_##LayerName, LayerName, MessageCheckerBase) { \
-    CHECKER_INIT(LayerName) \
+static MessageCheckerBase g_messageChecker;
+
+#define DEFINE_LAYER_CHECKER(LayerName) \
+class $modify(MessageChecker_##LayerName, LayerName) { \
+public: \
+    bool init() override { \
+        if (!LayerName::init()) return false; \
+        log::info(#LayerName " init"); \
+        if (!g_messageChecker.bootChecked) { \
+            g_messageChecker.bootChecked = true; \
+            log::info("boot sequence starting"); \
+            this->schedule([&](float dt) { g_messageChecker.onScheduledTick(dt); }, 1.0f, "MessageCheckerScheduler"); \
+            g_messageChecker.onScheduledTick(0); \
+        } else { \
+            log::info("boot already done, scheduling check"); \
+            this->schedule([&](float dt) { g_messageChecker.onScheduledTick(dt); }, 1.0f, "MessageCheckerScheduler"); \
+        } \
+        return true; \
+    } \
 };
 
-MAKE_MESSAGE_CHECKER(MenuLayer)
-MAKE_MESSAGE_CHECKER(LevelSelectLayer)
-MAKE_MESSAGE_CHECKER(GJGarageLayer)
-MAKE_MESSAGE_CHECKER(GJShopLayer)
-MAKE_MESSAGE_CHECKER(CreatorLayer)
-MAKE_MESSAGE_CHECKER(LevelBrowserLayer)
-MAKE_MESSAGE_CHECKER(LevelInfoLayer)
-MAKE_MESSAGE_CHECKER(LevelEditorLayer)
-MAKE_MESSAGE_CHECKER(PlayLayer)
-MAKE_MESSAGE_CHECKER(SecretRewardsLayer)
-MAKE_MESSAGE_CHECKER(SecretLayer)
-MAKE_MESSAGE_CHECKER(SecretLayer2)
-MAKE_MESSAGE_CHECKER(SecretLayer3)
-MAKE_MESSAGE_CHECKER(SecretLayer4)
-MAKE_MESSAGE_CHECKER(SecretLayer5)
-MAKE_MESSAGE_CHECKER(LevelAreaInnerLayer)
-MAKE_MESSAGE_CHECKER(GauntletSelectLayer)
-MAKE_MESSAGE_CHECKER(GauntletLayer)
+DEFINE_LAYER_CHECKER(MenuLayer)
+DEFINE_LAYER_CHECKER(LevelSelectLayer)
+DEFINE_LAYER_CHECKER(GjGarageLayer)
+DEFINE_LAYER_CHECKER(GjShopLayer)
+DEFINE_LAYER_CHECKER(CreatorLayer)
+DEFINE_LAYER_CHECKER(LevelBrowserLayer)
+DEFINE_LAYER_CHECKER(LevelClearLayer)
+DEFINE_LAYER_CHECKER(LevelEditorPauseLayer)
+DEFINE_LAYER_CHECKER(LevelLeaderboardLayer)
+DEFINE_LAYER_CHECKER(LeaderboardLayer)
+DEFINE_LAYER_CHECKER(LevelsLayer)
+DEFINE_LAYER_CHECKER(LoadingLayer)
+DEFINE_LAYER_CHECKER(MapLayer)
+DEFINE_LAYER_CHECKER(MessageLayer)
+DEFINE_LAYER_CHECKER(NewgroundsLoginLayer)
+DEFINE_LAYER_CHECKER(PlayLayer)
+DEFINE_LAYER_CHECKER(ProfilePage)
+DEFINE_LAYER_CHECKER(PurchaseLayer)
+DEFINE_LAYER_CHECKER(SearchLayer)
+DEFINE_LAYER_CHECKER(SetLayer)
+DEFINE_LAYER_CHECKER(StatisticsLayer)
+DEFINE_LAYER_CHECKER(UserInfoLayer)
+
