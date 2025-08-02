@@ -3,7 +3,6 @@
 #include <Geode/modify/LevelSelectLayer.hpp>
 #include <Geode/modify/GJGarageLayer.hpp>
 #include <Geode/modify/GJShopLayer.hpp>
-#include <Geode/modify/ModsLayer.hpp>
 #include <Geode/modify/CreatorLayer.hpp>
 #include <Geode/modify/LevelBrowserLayer.hpp>
 #include <Geode/modify/LevelInfoLayer.hpp>
@@ -174,7 +173,6 @@ MAKE_MESSAGE_CHECKER(MenuLayer)
 MAKE_MESSAGE_CHECKER(LevelSelectLayer)
 MAKE_MESSAGE_CHECKER(GJGarageLayer)
 MAKE_MESSAGE_CHECKER(GJShopLayer)
-MAKE_MESSAGE_CHECKER(ModsLayer)
 MAKE_MESSAGE_CHECKER(CreatorLayer)
 MAKE_MESSAGE_CHECKER(LevelBrowserLayer)
 MAKE_MESSAGE_CHECKER(LevelInfoLayer)
