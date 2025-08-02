@@ -2,7 +2,7 @@
 #include <Geode/modify/MenuLayer.hpp> //Possibly help pinpoint the issue
 #include <Geode/binding/MenuLayer.hpp> //Using binding to help support more scenes
 #include <Geode/binding/LevelSelectLayer.hpp>
-#include <Geode/binding/GjGarageLayer.hpp>
+//#include <Geode/binding/GjGarageLayer.hpp>
 #include <Geode/binding/GjShopLayer.hpp>
 #include <Geode/binding/CreatorLayer.hpp>
 #include <Geode/binding/LevelBrowserLayer.hpp>
