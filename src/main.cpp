@@ -191,21 +191,21 @@ namespace MessageCheck {
     };
 }
 
-// Create $modify classes for all the scenes
-class $modify(MenuLayer, MessageCheck::MessageCheckerBase<MenuLayer>) {};
-class $modify(PlayLayer, MessageCheck::MessageCheckerBase<PlayLayer>) {};
-class $modify(LevelEditorLayer, MessageCheck::MessageCheckerBase<LevelEditorLayer>) {};
-class $modify(LevelSelectLayer, MessageCheck::MessageCheckerBase<LevelSelectLayer>) {};
-class $modify(GJShopLayer, MessageCheck::MessageCheckerBase<GJShopLayer>) {};
-class $modify(CreatorLayer, MessageCheck::MessageCheckerBase<CreatorLayer>) {};
-class $modify(LevelBrowserLayer, MessageCheck::MessageCheckerBase<LevelBrowserLayer>) {};
-class $modify(LevelInfoLayer, MessageCheck::MessageCheckerBase<LevelInfoLayer>) {};
-class $modify(SecretRewardsLayer, MessageCheck::MessageCheckerBase<SecretRewardsLayer>) {};
-class $modify(SecretLayer, MessageCheck::MessageCheckerBase<SecretLayer>) {};
-class $modify(SecretLayer2, MessageCheck::MessageCheckerBase<SecretLayer2>) {};
-class $modify(SecretLayer3, MessageCheck::MessageCheckerBase<SecretLayer3>) {};
-class $modify(SecretLayer4, MessageCheck::MessageCheckerBase<SecretLayer4>) {};
-class $modify(SecretLayer5, MessageCheck::MessageCheckerBase<SecretLayer5>) {};
-class $modify(LevelAreaInnerLayer, MessageCheck::MessageCheckerBase<LevelAreaInnerLayer>) {};
-class $modify(GauntletSelectLayer, MessageCheck::MessageCheckerBase<GauntletSelectLayer>) {};
-class $modify(GauntletLayer, MessageCheck::MessageCheckerBase<GauntletLayer>) {};
+// Apply the MessageCheckerBase to layers with unique $modify class names to avoid redefinition
+class $modify(MenuLayerHook, MessageCheck::MessageCheckerBase<MenuLayer>) {};
+class $modify(PlayLayerHook, MessageCheck::MessageCheckerBase<PlayLayer>) {};
+class $modify(LevelEditorLayerHook, MessageCheck::MessageCheckerBase<LevelEditorLayer>) {};
+class $modify(LevelSelectLayerHook, MessageCheck::MessageCheckerBase<LevelSelectLayer>) {};
+class $modify(GJShopLayerHook, MessageCheck::MessageCheckerBase<GJShopLayer>) {};
+class $modify(CreatorLayerHook, MessageCheck::MessageCheckerBase<CreatorLayer>) {};
+class $modify(LevelBrowserLayerHook, MessageCheck::MessageCheckerBase<LevelBrowserLayer>) {};
+class $modify(LevelInfoLayerHook, MessageCheck::MessageCheckerBase<LevelInfoLayer>) {};
+class $modify(SecretRewardsLayerHook, MessageCheck::MessageCheckerBase<SecretRewardsLayer>) {};
+class $modify(SecretLayerHook, MessageCheck::MessageCheckerBase<SecretLayer>) {};
+class $modify(SecretLayer2Hook, MessageCheck::MessageCheckerBase<SecretLayer2>) {};
+class $modify(SecretLayer3Hook, MessageCheck::MessageCheckerBase<SecretLayer3>) {};
+class $modify(SecretLayer4Hook, MessageCheck::MessageCheckerBase<SecretLayer4>) {};
+class $modify(SecretLayer5Hook, MessageCheck::MessageCheckerBase<SecretLayer5>) {};
+class $modify(LevelAreaInnerLayerHook, MessageCheck::MessageCheckerBase<LevelAreaInnerLayer>) {};
+class $modify(GauntletSelectLayerHook, MessageCheck::MessageCheckerBase<GauntletSelectLayer>) {};
+class $modify(GauntletLayerHook, MessageCheck::MessageCheckerBase<GauntletLayer>) {};
