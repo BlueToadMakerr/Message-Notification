@@ -6,7 +6,6 @@
 #include <Geode/modify/CreatorLayer.hpp>
 #include <Geode/modify/LevelBrowserLayer.hpp>
 #include <Geode/modify/LevelInfoLayer.hpp>
-#include <Geode/modify/LevelEditLayer.hpp>
 #include <Geode/modify/LevelEditorLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/SecretRewardsLayer.hpp>
