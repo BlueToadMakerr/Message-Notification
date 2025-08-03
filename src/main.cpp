@@ -1,180 +1,244 @@
 #include <Geode/Geode.hpp>
-#include <Geode/modify/CCScene.hpp>
-#include <Geode/binding/AchievementNotifier.hpp>
-#include <Geode/binding/GJAccountManager.hpp>
-#include <Geode/utils/string.hpp>
-#include <Geode/utils/base64.hpp>
-#include <Geode/loader/Log.hpp>
-#include <Geode/cocos/extensions/network/HttpClient.h>
 
-#include <chrono>
-#include <sstream>
+#include <Geode/modify/MenuLayer.hpp>
+#include <Geode/modify/PlayLayer.hpp>
+#include <Geode/modify/LevelEditorLayer.hpp>
 
-using namespace geode::prelude;
+#include <Geode/binding/AchievementNotifier.hpp>    
+#include <Geode/binding/GJAccountManager.hpp>    
+#include <Geode/utils/string.hpp>    
+#include <Geode/utils/base64.hpp>    
+#include <Geode/loader/Log.hpp>    
+#include <Geode/cocos/extensions/network/HttpClient.h>    
+    
+#include <chrono>    
+    
+using namespace geode::prelude;    
+    
+class $modify(MessageChecker, MenuLayer) {    
+    struct Fields {    
+        inline static std::chrono::steady_clock::time_point nextCheck = std::chrono::steady_clock::now();    
+        inline static bool bootChecked = false;    
+    };    
+    
+    static std::vector<std::string> split(const std::string& str, char delim) {    
+        std::vector<std::string> elems;    
+        std::stringstream ss(str);    
+        std::string item;    
+        while (std::getline(ss, item, delim)) {    
+            elems.push_back(item);    
+        }    
+        return elems;    
+    }    
+    
+    // Remove the time tags "7:" and "8:" and their values from the message string    
+    static std::string cleanMessage(const std::string& msg) {    
+        std::vector<std::string> parts = split(msg, ':');    
+        std::string cleaned;    
+        for (size_t i = 0; i < parts.size(); ++i) {    
+            if (parts[i] == "7" || parts[i] == "8") {    
+                ++i; // Skip tag and its value    
+                continue;    
+            }    
+            if (!cleaned.empty()) cleaned += ":";    
+            cleaned += parts[i];    
+        }    
+        return cleaned;    
+    }    
+    
+    void showNotification(const std::string& title) {    
+        AchievementNotifier::sharedState()->notifyAchievement(    
+            title.c_str(),    
+            "",    
+            "GJ_messageIcon_001.png",    
+            false    
+        );    
+        log::info("notified user with title: {}", title);    
+    }    
+    
+    void checkMessages() {    
+        log::info("checking for new messages");    
+    
+        auto* acc = GJAccountManager::sharedState();    
+        if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {    
+            log::info("not logged in, skipping check");    
+            return;    
+        }    
+    
+        std::string postData = fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2);    
+        log::info("sending HTTP request with data: {}", postData);    
+    
+        auto* req = new cocos2d::extension::CCHttpRequest();    
+        req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");    
+        req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);    
+        req->setRequestData(postData.c_str(), postData.length());    
+        req->setTag("MessageCheck");    
+    
+        req->setResponseCallback(this, SEL_HttpResponse(&MessageChecker::onMessageResponse));    
+        cocos2d::extension::CCHttpClient::getInstance()->send(req);    
+        req->release();    
+    }    
+    
+    void onMessageResponse(cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {    
+        log::info("received response from server");    
+    
+        if (!resp || !resp->isSucceed()) {    
+            log::info("network request failed or was null");    
+            return;    
+        }    
+    
+        std::string raw(resp->getResponseData()->begin(), resp->getResponseData()->end());    
+        log::info("raw server response: {}", raw);    
+    
+        if (raw.empty() || raw == "-1") {    
+            log::info("no messages found in server response");    
+            return;    
+        }    
+    
+        auto currentRaw = split(raw, '|');    
+        std::vector<std::string> currentClean;    
+        for (const auto& msg : currentRaw) {    
+            std::string cleaned = cleanMessage(msg);    
+            currentClean.push_back(cleaned);    
+            log::info("cleaned message: {}", cleaned);    
+        }    
+    
+        std::string saved = Mod::get()->getSavedValue<std::string>("last-messages", "");    
+        auto old = split(saved, '|');    
+    
+        std::vector<std::string> newMessages;    
+        for (auto& clean : currentClean) {    
+            if (std::find(old.begin(), old.end(), clean) == old.end()) {    
+                newMessages.push_back(clean);    
+                log::info("new message detected: {}", clean);    
+            }    
+        }    
+    
+        if (!newMessages.empty()) {    
+            log::info("total new messages: {}", newMessages.size());    
+    
+            if (newMessages.size() == 1) {    
+                auto parts = split(newMessages[0], ':');    
+                if (parts.size() > 9) {    
+                    std::string sender = parts[1];    
+                    std::string subjectBase64 = parts[9];    
+                    log::info("base64 subject: {}", subjectBase64);    
+    
+                    auto decoded = geode::utils::base64::decode(subjectBase64);    
+                    std::string subject;    
+                    if (decoded.isOk()) {    
+                        auto vec = decoded.unwrap();    
+                        subject = std::string(vec.begin(), vec.end());    
+                        log::info("decoded subject: {}", subject);    
+                    } else {    
+                        subject = "<Invalid base64>";    
+                        log::info("failed to decode base64 subject");    
+                    }    
+    
+                    std::string notif = fmt::format("New Message!\nSent by: {}\n{}", sender, subject);    
+                    showNotification(notif);    
+                } else {    
+                    showNotification("New Message!");    
+                }    
+            } else {    
+                showNotification(fmt::format("{} New Messages!", newMessages.size()));    
+            }    
+        } else {    
+            log::info("no new messages compared to saved list");    
+        }    
+    
+        // Save cleaned current messages joined by '|'    
+        std::string save;    
+        for (size_t i = 0; i < currentClean.size(); ++i) {    
+            if (i > 0) save += "|";    
+            save += currentClean[i];    
+        }    
+        Mod::get()->setSavedValue("last-messages", save);    
+        log::info("saved current message state to settings");    
+    }    
+    
+    void onScheduledTick(float) {    
+        int interval = 300; // default interval fallback    
+        try {    
+            interval = Mod::get()->getSettingValue<int>("check-interval");    
+            interval = std::clamp(interval, 60, 600);    
+            log::info("using check interval from settings: {}", interval);    
+        } catch (...) {    
+            log::info("failed to get check-interval setting, using default 300");    
+        }    
+    
+        auto now = std::chrono::steady_clock::now();    
+    
+        if (now >= Fields::nextCheck) {    
+            log::info("interval elapsed, performing message check");    
+            checkMessages();    
+            Fields::nextCheck = now + std::chrono::seconds(interval);    
+            log::info("next check scheduled in {} seconds", interval);    
+        } else {    
+            auto remain = std::chrono::duration_cast<std::chrono::seconds>(Fields::nextCheck - now).count();    
+            log::info("waiting for next check: {} seconds left", remain);    
+        }    
+    }    
+    
+    bool init() {    
+        if (!MenuLayer::init()) return false;    
+    
+        log::info("MenuLayer init");    
+    
+        if (!Fields::bootChecked) {    
+            Fields::bootChecked = true;    
+            log::info("boot sequence starting");    
+    
+            // schedule the tick function every second    
+            this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);    
+            onScheduledTick(0);  // run immediately on boot    
+        } else {    
+            log::info("boot already done, skipping init check and re-running the schedule"); //This should run whenever the menu gets switched as were checking all menus instead of just MenuLayer Init    
+             this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);    
+        }    
+    
+        return true;    
+    }    
+};
+//GPT Recommend me this...
+// Clone for PlayLayer
+class $modify(MessageChecker_Play, PlayLayer) {
+    bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) {
+        if (!PlayLayer::init(level, useReplay, dontCreateObjects)) return false;
 
-class MessageTicker : public CCNode {
-public:
-    static MessageTicker* get() {
-        static auto* instance = MessageTicker::create();
-        return instance;
-    }
+        log::info("PlayLayer init");
 
-    static MessageTicker* create() {
-        auto ret = new MessageTicker();
-        if (ret && ret->init()) {
-            ret->autorelease();
-            return ret;
-        }
-        CC_SAFE_DELETE(ret);
-        return nullptr;
-    }
-
-    bool init() override {
-        this->schedule(schedule_selector(MessageTicker::onTick), 1.0f);
-        log::info("[Message Notifications]: Ticker started");
-        return true;
-    }
-
-private:
-    std::chrono::steady_clock::time_point nextCheck = std::chrono::steady_clock::now();
-
-    void onTick(float) {
-        int interval = 300;
-        try {
-            interval = Mod::get()->getSettingValue<int>("check-interval");
-            interval = std::clamp(interval, 60, 600);
-        } catch (...) {
-            log::info("[Message Notifications]: failed to get check-interval setting, using default 300");
-        }
-
-        auto now = std::chrono::steady_clock::now();
-        if (now >= nextCheck) {
-            log::info("[Message Notifications]: ✅ Interval reached! Checking for new messages...");
-            nextCheck = now + std::chrono::seconds(interval);
-            checkMessages();
+        if (!MessageChecker::Fields::bootChecked) {
+            MessageChecker::Fields::bootChecked = true;
+            log::info("boot sequence starting (PlayLayer)");
+            this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
+            MessageChecker::onScheduledTick(0);
         } else {
-            auto remain = std::chrono::duration_cast<std::chrono::seconds>(nextCheck - now).count();
-            auto eta = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now() + std::chrono::seconds(remain));
-            log::info("[Message Notifications]: ⏳ {}s remaining until next message check (ETA: {})", remain, std::ctime(&eta));
-        }
-    }
-
-    void checkMessages() {
-        auto* acc = GJAccountManager::sharedState();
-        if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
-            log::info("[Message Notifications]: Not logged in, skipping message check");
-            return;
+            log::info("boot already done, rescheduling (PlayLayer)");
+            this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
         }
 
-        std::string postData = fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2);
-
-        auto* req = new cocos2d::extension::CCHttpRequest();
-        req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");
-        req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
-        req->setRequestData(postData.c_str(), postData.length());
-        req->setTag("MessageCheck");
-
-        req->setResponseCallback(this, SEL_HttpResponse(&MessageTicker::onMessageResponse));
-        cocos2d::extension::CCHttpClient::getInstance()->send(req);
-        req->release();
-    }
-
-    void onMessageResponse(cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
-        if (!resp || !resp->isSucceed()) {
-            log::info("[Message Notifications]: HTTP failed or no response");
-            return;
-        }
-
-        std::string raw(resp->getResponseData()->begin(), resp->getResponseData()->end());
-        log::info("[Message Notifications]: Server response: {}", raw);
-
-        if (raw.empty() || raw == "-1") return;
-
-        auto currentRaw = split(raw, '|');
-        std::vector<std::string> currentClean;
-        for (const auto& msg : currentRaw)
-            currentClean.push_back(cleanMessage(msg));
-
-        std::string saved = Mod::get()->getSavedValue<std::string>("last-messages", "");
-        auto old = split(saved, '|');
-
-        std::vector<std::string> newMessages;
-        for (auto& clean : currentClean) {
-            if (std::find(old.begin(), old.end(), clean) == old.end()) {
-                newMessages.push_back(clean);
-            }
-        }
-
-        if (!newMessages.empty()) {
-            if (newMessages.size() == 1) {
-                auto parts = split(newMessages[0], ':');
-                if (parts.size() > 9) {
-                    std::string sender = parts[1];
-                    std::string subjectBase64 = parts[9];
-                    std::string subject;
-
-                    auto decoded = geode::utils::base64::decode(subjectBase64);
-                    if (decoded.isOk()) {
-                        auto vec = decoded.unwrap();
-                        subject = std::string(vec.begin(), vec.end());
-                    } else {
-                        subject = "<Invalid base64>";
-                    }
-
-                    std::string notif = fmt::format("New Message!\nSent by: {}\n{}", sender, subject);
-                    showNotification(notif);
-                } else {
-                    showNotification("New Message!");
-                }
-            } else {
-                showNotification(fmt::format("{} New Messages!", newMessages.size()));
-            }
-        }
-
-        std::string save;
-        for (size_t i = 0; i < currentClean.size(); ++i) {
-            if (i > 0) save += "|";
-            save += currentClean[i];
-        }
-        Mod::get()->setSavedValue("last-messages", save);
-    }
-
-    static void showNotification(const std::string& title) {
-        AchievementNotifier::sharedState()->notifyAchievement(title.c_str(), "", "GJ_messageIcon_001.png", false);
-    }
-
-    static std::vector<std::string> split(const std::string& str, char delim) {
-        std::vector<std::string> elems;
-        std::stringstream ss(str);
-        std::string item;
-        while (std::getline(ss, item, delim))
-            elems.push_back(item);
-        return elems;
-    }
-
-    static std::string cleanMessage(const std::string& msg) {
-        auto parts = split(msg, ':');
-        std::string cleaned;
-        for (size_t i = 0; i < parts.size(); ++i) {
-            if (parts[i] == "7" || parts[i] == "8") {
-                ++i;
-                continue;
-            }
-            if (!cleaned.empty()) cleaned += ":";
-            cleaned += parts[i];
-        }
-        return cleaned;
+        return true;
     }
 };
 
-// Inject ticker into every scene once
-class $modify(MessageTickerSceneHook, CCScene) {
-    void onEnter() {
-        CCScene::onEnter();
+// Clone for LevelEditorLayer
+class $modify(MessageChecker_Editor, LevelEditorLayer) {
+    bool init(GJGameLevel* level, bool p1, bool p2) {
+        if (!LevelEditorLayer::init(level, p1, p2)) return false;
 
-        if (!MessageTicker::get()->getParent()) {
-            this->addChild(MessageTicker::get(), INT_MAX);
-            log::info("[Message Notifications]: Injected ticker into scene");
+        log::info("LevelEditorLayer init");
+
+        if (!MessageChecker::Fields::bootChecked) {
+            MessageChecker::Fields::bootChecked = true;
+            log::info("boot sequence starting (Editor)");
+            this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
+            MessageChecker::onScheduledTick(0);
+        } else {
+            log::info("boot already done, rescheduling (Editor)");
+            this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
         }
+
+        return true;
     }
 };
