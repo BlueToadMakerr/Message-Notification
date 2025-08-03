@@ -157,7 +157,7 @@ class $modify(MessageChecker, MenuLayer) {    
         log::info("saved current message state to settings");    
     }    
     
-    void onScheduledTick(float) {    
+    static void onScheduledTick(float) {    
         int interval = 300; // default interval fallback    
         try {    
             interval = Mod::get()->getSettingValue<int>("check-interval");    
@@ -212,7 +212,8 @@ class $modify(MessageChecker_Play, PlayLayer) {
             MessageChecker::Fields::bootChecked = true;
             log::info("boot sequence starting (PlayLayer)");
             this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
-            this->onScheduledTick(0);  // FIXED
+            MessageChecker::onScheduledTick(0);
+  // FIXED
         } else {
             log::info("boot already done, rescheduling (PlayLayer)");
             this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
@@ -233,7 +234,8 @@ class $modify(MessageChecker_Editor, LevelEditorLayer) {
             MessageChecker::Fields::bootChecked = true;
             log::info("boot sequence starting (Editor)");
             this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
-            this->onScheduledTick(0);  // FIXED
+            MessageChecker::onScheduledTick(0);
+  // FIXED
         } else {
             log::info("boot already done, rescheduling (Editor)");
             this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
