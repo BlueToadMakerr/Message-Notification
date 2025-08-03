@@ -1,7 +1,6 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
-#include <Geode/modify/LevelEditorLayer.hpp>
 
 #include <Geode/binding/AchievementNotifier.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
@@ -15,9 +14,25 @@
 
 using namespace geode::prelude;
 
-namespace MessageCheck {
-    inline std::chrono::steady_clock::time_point nextCheck = std::chrono::steady_clock::now();
-    inline bool bootChecked = false;
+class MessageChecker : public cocos2d::CCNode {
+public:
+    static MessageChecker* getInstance() {
+        static MessageChecker instance;
+        return &instance;
+    }
+
+    void start() {
+        if (!_started) {
+            _started = true;
+            this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
+            nextCheck = std::chrono::steady_clock::now();
+            log::info("MessageChecker started");
+        }
+    }
+
+private:
+    bool _started = false;
+    std::chrono::steady_clock::time_point nextCheck;
 
     std::vector<std::string> split(const std::string& str, char delim) {
         std::vector<std::string> elems;
@@ -50,7 +65,27 @@ namespace MessageCheck {
         log::info("notified user with title: {}", title);
     }
 
-    void handleResponse(cocos2d::extension::CCHttpClient* client, cocos2d::extension::CCHttpResponse* resp) {
+    void checkMessages() {
+        auto* acc = GJAccountManager::sharedState();
+        if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
+            log::info("not logged in");
+            return;
+        }
+
+        std::string postData = fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2);
+        log::info("sending HTTP request: {}", postData);
+
+        auto* req = new cocos2d::extension::CCHttpRequest();
+        req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");
+        req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
+        req->setRequestData(postData.c_str(), postData.length());
+        req->setTag("MessageCheck");
+        req->setResponseCallback(this, SEL_HttpResponse(&MessageChecker::onMessageResponse));
+        cocos2d::extension::CCHttpClient::getInstance()->send(req);
+        req->release();
+    }
+
+    void onMessageResponse(cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
         if (!resp || !resp->isSucceed()) {
             log::info("network error");
             return;
@@ -110,77 +145,41 @@ namespace MessageCheck {
         Mod::get()->setSavedValue("last-messages", save);
     }
 
-    void checkMessages() {
-        auto* acc = GJAccountManager::sharedState();
-        if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
-            log::info("not logged in");
-            return;
+    void onScheduledTick(float) {
+        int interval = 300;
+        try {
+            interval = Mod::get()->getSettingValue<int>("check-interval");
+            interval = std::clamp(interval, 60, 600);
+        } catch (...) {
+            // default
         }
 
-        std::string postData = fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2);
-        log::info("sending HTTP request: {}", postData);
-
-        auto* req = new cocos2d::extension::CCHttpRequest();
-        req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");
-        req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
-        req->setRequestData(postData.c_str(), postData.length());
-        req->setTag("MessageCheck");
-        req->setResponseCallback(CC_CALLBACK_2(MessageCheck::handleResponse));
-        cocos2d::extension::CCHttpClient::getInstance()->send(req);
-        req->release();
-    }
-
-    void maybeSchedule(CCNode* node) {
-        if (!bootChecked) {
-            bootChecked = true;
-            log::info("boot sequence starting");
-
-            auto tick = [](float) {
-                int interval = 300;
-                try {
-                    interval = Mod::get()->getSettingValue<int>("check-interval");
-                    interval = std::clamp(interval, 60, 600);
-                } catch (...) {}
-
-                auto now = std::chrono::steady_clock::now();
-                if (now >= nextCheck) {
-                    log::info("interval elapsed, checking messages");
-                    checkMessages();
-                    nextCheck = now + std::chrono::seconds(interval);
-                } else {
-                    auto remain = std::chrono::duration_cast<std::chrono::seconds>(nextCheck - now).count();
-                    log::info("waiting {}s before next check", remain);
-                }
-            };
-
-            node->schedule(tick, 1.0f, "MessageCheckTick");
+        auto now = std::chrono::steady_clock::now();
+        if (now >= nextCheck) {
+            log::info("interval elapsed, checking messages");
+            checkMessages();
+            nextCheck = now + std::chrono::seconds(interval);
+        } else {
+            auto remain = std::chrono::duration_cast<std::chrono::seconds>(nextCheck - now).count();
+            log::info("waiting {}s before next check", remain);
         }
     }
-}
+};
 
-// MenuLayer hook
+// Hook MenuLayer to start MessageChecker
 class $modify(MenuLayerHook, MenuLayer) {
     bool init() {
         if (!MenuLayer::init()) return false;
-        MessageCheck::maybeSchedule(this);
+        MessageChecker::getInstance()->start();
         return true;
     }
 };
 
-// PlayLayer hook
+// Hook PlayLayer to start MessageChecker
 class $modify(PlayLayerHook, PlayLayer) {
     bool init(GJGameLevel* level) {
         if (!PlayLayer::init(level, false, false)) return false;
-        MessageCheck::maybeSchedule(this);
-        return true;
-    }
-};
-
-// LevelEditorLayer hook
-class $modify(LevelEditorLayerHook, LevelEditorLayer) {
-    bool init(GJGameLevel* level, bool idk) {
-        if (!LevelEditorLayer::init(level, idk)) return false;
-        MessageCheck::maybeSchedule(this);
+        MessageChecker::getInstance()->start();
         return true;
     }
 };
