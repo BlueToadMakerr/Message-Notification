@@ -10,6 +10,7 @@
 #include <Geode/cocos/extensions/network/HttpClient.h>
 
 #include <chrono>
+#include <sstream>
 
 using namespace geode::prelude;
 
@@ -31,7 +32,7 @@ std::string cleanMessage(const std::string& msg) {
     std::string cleaned;
     for (size_t i = 0; i < parts.size(); ++i) {
         if (parts[i] == "7" || parts[i] == "8") {
-            ++i;
+            ++i; // skip value after 7 or 8
             continue;
         }
         if (!cleaned.empty()) cleaned += ":";
@@ -41,39 +42,30 @@ std::string cleanMessage(const std::string& msg) {
 }
 
 void showNotification(const std::string& title) {
-    AchievementNotifier::sharedState()->notifyAchievement(
-        title.c_str(), "", "GJ_messageIcon_001.png", false
-    );
+    AchievementNotifier::sharedState()->notifyAchievement(title.c_str(), "", "GJ_messageIcon_001.png", false);
     log::info("notified user with title: {}", title);
 }
 
-void checkMessages() {
-    log::info("checking for new messages");
+void checkMessages();
 
-    auto* acc = GJAccountManager::sharedState();
-    if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
-        log::info("not logged in, skipping check");
-        return;
-    }
+void onScheduledTick(float);
 
-    std::string postData = fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2);
-    log::info("sending HTTP request with data: {}", postData);
+/////////////////////////
+// MessageChecker base  //
+/////////////////////////
 
-    auto* req = new cocos2d::extension::CCHttpRequest();
-    req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");
-    req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
-    req->setRequestData(postData.c_str(), postData.length());
-    req->setTag("MessageCheck");
-
-    req->setResponseCallback([](cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
-        log::info("received response from server");
-
-        if (!resp || !resp->isSucceed()) {
-            log::info("network request failed or was null");
+class MessageCheckerBase : public cocos2d::CCObject {
+public:
+    // This handles the HTTP response callback
+    void onMessageResponse(cocos2d::CCNode* sender, void* data) {
+        auto* response = static_cast<cocos2d::extension::CCHttpResponse*>(data);
+        if (!response || !response->isSucceed()) {
+            log::warn("HTTP request failed: {}", response ? response->getErrorBuffer() : "null response");
             return;
         }
 
-        std::string raw(resp->getResponseData()->begin(), resp->getResponseData()->end());
+        std::vector<char>* buffer = response->getResponseData();
+        std::string raw(buffer->begin(), buffer->end());
         log::info("raw server response: {}", raw);
 
         if (raw.empty() || raw == "-1") {
@@ -135,11 +127,30 @@ void checkMessages() {
         }
         Mod::get()->setSavedValue("last-messages", save);
         log::info("saved current message state to settings");
-    });
+    }
 
-    cocos2d::extension::CCHttpClient::getInstance()->send(req);
-    req->release();
-}
+    void checkMessages() {
+        log::info("checking for new messages");
+
+        auto* acc = GJAccountManager::sharedState();
+        if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
+            log::info("not logged in, skipping check");
+            return;
+        }
+
+        std::string postData = fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2);
+        log::info("sending HTTP request with data: {}", postData);
+
+        auto* req = new cocos2d::extension::CCHttpRequest();
+        req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");
+        req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
+        req->setRequestData(postData.c_str(), postData.length());
+        req->setTag("MessageCheck");
+        req->setResponseCallback(this, callfuncND_selector(MessageCheckerBase::onMessageResponse));
+        cocos2d::extension::CCHttpClient::getInstance()->send(req);
+        req->release();
+    }
+};
 
 void onScheduledTick(float) {
     int interval = 300;
@@ -152,7 +163,8 @@ void onScheduledTick(float) {
 
     auto now = std::chrono::steady_clock::now();
     if (now >= MessageCheckerState::nextCheck) {
-        checkMessages();
+        MessageCheckerBase checker;
+        checker.checkMessages();
         MessageCheckerState::nextCheck = now + std::chrono::seconds(interval);
         log::info("next check scheduled in {} seconds", interval);
     } else {
@@ -161,9 +173,13 @@ void onScheduledTick(float) {
     }
 }
 
-// Apply to MenuLayer
-class $modify(MessageCheckerMenu, MenuLayer) {
-    bool init() {
+//////////////////////////
+// Modify MenuLayer      //
+//////////////////////////
+
+class $modify(MessageCheckerMenu, MenuLayer), public MessageCheckerBase {
+public:
+    bool init() override {
         if (!MenuLayer::init()) return false;
         log::info("MenuLayer init");
 
@@ -183,10 +199,16 @@ class $modify(MessageCheckerMenu, MenuLayer) {
     }
 };
 
-// Apply to PlayLayer
-class $modify(MessageCheckerPlay, PlayLayer) {
-    bool init() {
-        if (!PlayLayer::init()) return false;
+//////////////////////////
+// Modify PlayLayer      //
+//////////////////////////
+
+class $modify(MessageCheckerPlay, PlayLayer), public MessageCheckerBase {
+public:
+    // PlayLayer init requires args: (GJGameLevel*, bool, bool)
+    bool init(GJGameLevel* level, bool useReplay, bool dontCreateObjects) override {
+        if (!PlayLayer::init(level, useReplay, dontCreateObjects))
+            return false;
         log::info("PlayLayer init");
 
         this->schedule(schedule_selector(MessageCheckerPlay::onTick), 1.0f);
@@ -198,10 +220,16 @@ class $modify(MessageCheckerPlay, PlayLayer) {
     }
 };
 
-// Apply to LevelEditorLayer
-class $modify(MessageCheckerEditor, LevelEditorLayer) {
-    bool init() {
-        if (!LevelEditorLayer::init()) return false;
+//////////////////////////////
+// Modify LevelEditorLayer   //
+//////////////////////////////
+
+class $modify(MessageCheckerEditor, LevelEditorLayer), public MessageCheckerBase {
+public:
+    // LevelEditorLayer init requires args: (GJGameLevel*, bool)
+    bool init(GJGameLevel* level, bool isEditor) override {
+        if (!LevelEditorLayer::init(level, isEditor))
+            return false;
         log::info("LevelEditorLayer init");
 
         this->schedule(schedule_selector(MessageCheckerEditor::onTick), 1.0f);
