@@ -50,6 +50,66 @@ namespace MessageCheck {
         log::info("notified user with title: {}", title);
     }
 
+    void handleResponse(cocos2d::extension::CCHttpClient* client, cocos2d::extension::CCHttpResponse* resp) {
+        if (!resp || !resp->isSucceed()) {
+            log::info("network error");
+            return;
+        }
+
+        std::string raw(resp->getResponseData()->begin(), resp->getResponseData()->end());
+        log::info("server response: {}", raw);
+
+        if (raw.empty() || raw == "-1") {
+            log::info("no new messages");
+            return;
+        }
+
+        auto currentRaw = split(raw, '|');
+        std::vector<std::string> currentClean;
+        for (const auto& msg : currentRaw) {
+            auto cleaned = cleanMessage(msg);
+            currentClean.push_back(cleaned);
+            log::info("cleaned: {}", cleaned);
+        }
+
+        std::string saved = Mod::get()->getSavedValue<std::string>("last-messages", "");
+        auto old = split(saved, '|');
+
+        std::vector<std::string> newMessages;
+        for (const auto& clean : currentClean) {
+            if (std::find(old.begin(), old.end(), clean) == old.end()) {
+                newMessages.push_back(clean);
+            }
+        }
+
+        if (!newMessages.empty()) {
+            if (newMessages.size() == 1) {
+                auto parts = split(newMessages[0], ':');
+                if (parts.size() > 9) {
+                    std::string sender = parts[1];
+                    std::string subject = "<Invalid base64>";
+                    auto decoded = geode::utils::base64::decode(parts[9]);
+                    if (decoded.isOk()) {
+                        auto vec = decoded.unwrap();
+                        subject = std::string(vec.begin(), vec.end());
+                    }
+                    showNotification(fmt::format("New Message!\nSent by: {}\n{}", sender, subject));
+                } else {
+                    showNotification("New Message!");
+                }
+            } else {
+                showNotification(fmt::format("{} New Messages!", newMessages.size()));
+            }
+        }
+
+        std::string save;
+        for (size_t i = 0; i < currentClean.size(); ++i) {
+            if (i > 0) save += "|";
+            save += currentClean[i];
+        }
+        Mod::get()->setSavedValue("last-messages", save);
+    }
+
     void checkMessages() {
         auto* acc = GJAccountManager::sharedState();
         if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
@@ -65,65 +125,7 @@ namespace MessageCheck {
         req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
         req->setRequestData(postData.c_str(), postData.length());
         req->setTag("MessageCheck");
-        req->setResponseCallback([](cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
-            if (!resp || !resp->isSucceed()) {
-                log::info("network error");
-                return;
-            }
-
-            std::string raw(resp->getResponseData()->begin(), resp->getResponseData()->end());
-            log::info("server response: {}", raw);
-
-            if (raw.empty() || raw == "-1") {
-                log::info("no new messages");
-                return;
-            }
-
-            auto currentRaw = split(raw, '|');
-            std::vector<std::string> currentClean;
-            for (const auto& msg : currentRaw) {
-                auto cleaned = cleanMessage(msg);
-                currentClean.push_back(cleaned);
-                log::info("cleaned: {}", cleaned);
-            }
-
-            std::string saved = Mod::get()->getSavedValue<std::string>("last-messages", "");
-            auto old = split(saved, '|');
-
-            std::vector<std::string> newMessages;
-            for (const auto& clean : currentClean) {
-                if (std::find(old.begin(), old.end(), clean) == old.end()) {
-                    newMessages.push_back(clean);
-                }
-            }
-
-            if (!newMessages.empty()) {
-                if (newMessages.size() == 1) {
-                    auto parts = split(newMessages[0], ':');
-                    if (parts.size() > 9) {
-                        std::string sender = parts[1];
-                        std::string subject = "<Invalid base64>";
-                        auto decoded = geode::utils::base64::decode(parts[9]);
-                        if (decoded.isOk()) {
-                            auto vec = decoded.unwrap();
-                            subject = std::string(vec.begin(), vec.end());
-                        }
-                        showNotification(fmt::format("New Message!\nSent by: {}\n{}", sender, subject));
-                    } else {
-                        showNotification("New Message!");
-                    }
-                } else {
-                    showNotification(fmt::format("{} New Messages!", newMessages.size()));
-                }
-            }
-
-            std::string save;
-            for (size_t i = 0; i < currentClean.size(); ++i) {
-                if (i > 0) save += "|";
-                save += currentClean[i];
-            }
-            Mod::get()->setSavedValue("last-messages", save);
-        });
+        req->setResponseCallback(CC_CALLBACK_2(MessageCheck::handleResponse));
         cocos2d::extension::CCHttpClient::getInstance()->send(req);
         req->release();
     }
@@ -132,7 +134,8 @@ namespace MessageCheck {
         if (!bootChecked) {
             bootChecked = true;
             log::info("boot sequence starting");
-            node->schedule([](float) {
+
+            auto tick = [](float) {
                 int interval = 300;
                 try {
                     interval = Mod::get()->getSettingValue<int>("check-interval");
@@ -148,12 +151,14 @@ namespace MessageCheck {
                     auto remain = std::chrono::duration_cast<std::chrono::seconds>(nextCheck - now).count();
                     log::info("waiting {}s before next check", remain);
                 }
-            }, "MessageCheckTick", 1.0f);
+            };
+
+            node->schedule(tick, 1.0f, "MessageCheckTick");
         }
     }
 }
 
-// Hook 1
+// MenuLayer hook
 class $modify(MenuLayerHook, MenuLayer) {
     bool init() {
         if (!MenuLayer::init()) return false;
@@ -162,16 +167,16 @@ class $modify(MenuLayerHook, MenuLayer) {
     }
 };
 
-// Hook 2
+// PlayLayer hook
 class $modify(PlayLayerHook, PlayLayer) {
     bool init(GJGameLevel* level) {
-        if (!PlayLayer::init(level)) return false;
+        if (!PlayLayer::init(level, false, false)) return false;
         MessageCheck::maybeSchedule(this);
         return true;
     }
 };
 
-// Hook 3
+// LevelEditorLayer hook
 class $modify(LevelEditorLayerHook, LevelEditorLayer) {
     bool init(GJGameLevel* level, bool idk) {
         if (!LevelEditorLayer::init(level, idk)) return false;
