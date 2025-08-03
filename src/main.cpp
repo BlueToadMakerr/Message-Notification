@@ -212,7 +212,7 @@ class $modify(MessageChecker_Play, PlayLayer) {
             MessageChecker::Fields::bootChecked = true;
             log::info("boot sequence starting (PlayLayer)");
             this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
-            MessageChecker::onScheduledTick(0);
+            this->onScheduledTick(0);  // FIXED
         } else {
             log::info("boot already done, rescheduling (PlayLayer)");
             this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
@@ -224,8 +224,8 @@ class $modify(MessageChecker_Play, PlayLayer) {
 
 // Clone for LevelEditorLayer
 class $modify(MessageChecker_Editor, LevelEditorLayer) {
-    bool init(GJGameLevel* level, bool p1, bool p2) {
-        if (!LevelEditorLayer::init(level, p1, p2)) return false;
+    bool init(GJGameLevel* level, bool p1) {  // FIXED: removed third arg
+        if (!LevelEditorLayer::init(level, p1)) return false;
 
         log::info("LevelEditorLayer init");
 
@@ -233,7 +233,7 @@ class $modify(MessageChecker_Editor, LevelEditorLayer) {
             MessageChecker::Fields::bootChecked = true;
             log::info("boot sequence starting (Editor)");
             this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
-            MessageChecker::onScheduledTick(0);
+            this->onScheduledTick(0);  // FIXED
         } else {
             log::info("boot already done, rescheduling (Editor)");
             this->schedule(schedule_selector(MessageChecker::onScheduledTick), 1.0f);
