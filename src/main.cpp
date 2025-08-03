@@ -34,21 +34,26 @@ class $modify(GlobalMessageSceneHook, CCScene) {
         return true;
     }
 
-    void onScheduledTick(float) {
-        int interval = 300; // fallback
-        try {
-            interval = Mod::get()->getSettingValue<int>("check-interval");
-            interval = std::clamp(interval, 60, 600);
-        } catch (...) {
-            log::info("failed to get check-interval setting, using default 300");
-        }
-
-        auto now = std::chrono::steady_clock::now();
-        if (now >= Fields::nextCheck) {
-            Fields::nextCheck = now + std::chrono::seconds(interval);
-            checkMessages();
-        }
+void onScheduledTick(float) {
+    int interval = 300; // fallback
+    try {
+        interval = Mod::get()->getSettingValue<int>("check-interval");
+        interval = std::clamp(interval, 60, 600);
+    } catch (...) {
+        log::info("failed to get check-interval setting, using default 300");
     }
+
+    auto now = std::chrono::steady_clock::now();
+
+    if (now >= Fields::nextCheck) {
+        log::info("✅ Interval reached! Checking for new messages...");
+        Fields::nextCheck = now + std::chrono::seconds(interval);
+        checkMessages();
+    } else {
+        auto remain = std::chrono::duration_cast<std::chrono::seconds>(Fields::nextCheck - now).count();
+        log::info("⏳ {}s remaining until next message check", remain);
+    }
+}
 
     void checkMessages() {
         log::info("checking for new messages");
