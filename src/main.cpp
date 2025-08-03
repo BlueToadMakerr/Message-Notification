@@ -2,29 +2,16 @@
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/modify/PlayLayer.hpp>
 #include <Geode/modify/LevelEditorLayer.hpp>
-#include <Geode/modify/LevelSelectLayer.hpp>
-#include <Geode/modify/GJShopLayer.hpp>
-#include <Geode/modify/CreatorLayer.hpp>
-#include <Geode/modify/LevelBrowserLayer.hpp>
-#include <Geode/modify/LevelInfoLayer.hpp>
-#include <Geode/modify/SecretRewardsLayer.hpp>
-#include <Geode/modify/SecretLayer.hpp>
-#include <Geode/modify/SecretLayer2.hpp>
-#include <Geode/modify/SecretLayer3.hpp>
-#include <Geode/modify/SecretLayer4.hpp>
-#include <Geode/modify/SecretLayer5.hpp>
-#include <Geode/modify/LevelAreaInnerLayer.hpp>
-#include <Geode/modify/GauntletSelectLayer.hpp>
-#include <Geode/modify/GauntletLayer.hpp>
 
 #include <Geode/binding/AchievementNotifier.hpp>
 #include <Geode/binding/GJAccountManager.hpp>
-#include <Geode/utils/string.hpp>
 #include <Geode/utils/base64.hpp>
 #include <Geode/loader/Log.hpp>
 #include <Geode/cocos/extensions/network/HttpClient.h>
 
 #include <chrono>
+#include <sstream>
+#include <algorithm>
 
 using namespace geode::prelude;
 
@@ -58,78 +45,27 @@ namespace MessageCheck {
 
     void showNotification(const std::string& title) {
         AchievementNotifier::sharedState()->notifyAchievement(
-            title.c_str(),
-            "",
-            "GJ_messageIcon_001.png",
-            false
+            title.c_str(), "", "GJ_messageIcon_001.png", false
         );
         log::info("notified user with title: {}", title);
     }
 
-    template <typename T>
-    class MessageCheckerBase : public T {
-    public:
-        bool init() override {
-            if (!T::init()) return false;
-
-            log::info("{} init", typeid(T).name());
-
-            if (!bootChecked) {
-                bootChecked = true;
-                log::info("boot sequence starting");
-                this->schedule(schedule_selector(MessageCheckerBase::onScheduledTick), 1.0f);
-                onScheduledTick(0);
-            } else {
-                log::info("already booted, rescheduling check");
-                this->schedule(schedule_selector(MessageCheckerBase::onScheduledTick), 1.0f);
-            }
-
-            return true;
+    void checkMessages() {
+        auto* acc = GJAccountManager::sharedState();
+        if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
+            log::info("not logged in");
+            return;
         }
 
-        void onScheduledTick(float) {
-            int interval = 300;
-            try {
-                interval = Mod::get()->getSettingValue<int>("check-interval");
-                interval = std::clamp(interval, 60, 600);
-                log::info("using interval from settings: {}", interval);
-            } catch (...) {
-                log::info("couldn't get interval setting, defaulting to 300");
-            }
+        std::string postData = fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2);
+        log::info("sending HTTP request: {}", postData);
 
-            auto now = std::chrono::steady_clock::now();
-
-            if (now >= nextCheck) {
-                log::info("interval elapsed, checking messages");
-                checkMessages();
-                nextCheck = now + std::chrono::seconds(interval);
-            } else {
-                auto remain = std::chrono::duration_cast<std::chrono::seconds>(nextCheck - now).count();
-                log::info("waiting for next check: {} seconds left", remain);
-            }
-        }
-
-        void checkMessages() {
-            auto* acc = GJAccountManager::sharedState();
-            if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
-                log::info("not logged in");
-                return;
-            }
-
-            std::string postData = fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2);
-            log::info("sending HTTP request: {}", postData);
-
-            auto* req = new cocos2d::extension::CCHttpRequest();
-            req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");
-            req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
-            req->setRequestData(postData.c_str(), postData.length());
-            req->setTag("MessageCheck");
-            req->setResponseCallback(this, SEL_HttpResponse(&MessageCheckerBase::onMessageResponse));
-            cocos2d::extension::CCHttpClient::getInstance()->send(req);
-            req->release();
-        }
-
-        void onMessageResponse(cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
+        auto* req = new cocos2d::extension::CCHttpRequest();
+        req->setUrl("https://www.boomlings.com/database/getGJMessages20.php");
+        req->setRequestType(cocos2d::extension::CCHttpRequest::kHttpPost);
+        req->setRequestData(postData.c_str(), postData.length());
+        req->setTag("MessageCheck");
+        req->setResponseCallback([](cocos2d::extension::CCHttpClient*, cocos2d::extension::CCHttpResponse* resp) {
             if (!resp || !resp->isSucceed()) {
                 log::info("network error");
                 return;
@@ -187,25 +123,59 @@ namespace MessageCheck {
                 save += currentClean[i];
             }
             Mod::get()->setSavedValue("last-messages", save);
+        });
+        cocos2d::extension::CCHttpClient::getInstance()->send(req);
+        req->release();
+    }
+
+    void maybeSchedule(CCNode* node) {
+        if (!bootChecked) {
+            bootChecked = true;
+            log::info("boot sequence starting");
+            node->schedule([](float) {
+                int interval = 300;
+                try {
+                    interval = Mod::get()->getSettingValue<int>("check-interval");
+                    interval = std::clamp(interval, 60, 600);
+                } catch (...) {}
+
+                auto now = std::chrono::steady_clock::now();
+                if (now >= nextCheck) {
+                    log::info("interval elapsed, checking messages");
+                    checkMessages();
+                    nextCheck = now + std::chrono::seconds(interval);
+                } else {
+                    auto remain = std::chrono::duration_cast<std::chrono::seconds>(nextCheck - now).count();
+                    log::info("waiting {}s before next check", remain);
+                }
+            }, "MessageCheckTick", 1.0f);
         }
-    };
+    }
 }
 
-// Apply the MessageCheckerBase to layers with unique $modify class names to avoid redefinition
-class $modify(MenuLayerHook, MessageCheck::MessageCheckerBase<MenuLayer>) {};
-class $modify(PlayLayerHook, MessageCheck::MessageCheckerBase<PlayLayer>) {};
-class $modify(LevelEditorLayerHook, MessageCheck::MessageCheckerBase<LevelEditorLayer>) {};
-class $modify(LevelSelectLayerHook, MessageCheck::MessageCheckerBase<LevelSelectLayer>) {};
-class $modify(GJShopLayerHook, MessageCheck::MessageCheckerBase<GJShopLayer>) {};
-class $modify(CreatorLayerHook, MessageCheck::MessageCheckerBase<CreatorLayer>) {};
-class $modify(LevelBrowserLayerHook, MessageCheck::MessageCheckerBase<LevelBrowserLayer>) {};
-class $modify(LevelInfoLayerHook, MessageCheck::MessageCheckerBase<LevelInfoLayer>) {};
-class $modify(SecretRewardsLayerHook, MessageCheck::MessageCheckerBase<SecretRewardsLayer>) {};
-class $modify(SecretLayerHook, MessageCheck::MessageCheckerBase<SecretLayer>) {};
-class $modify(SecretLayer2Hook, MessageCheck::MessageCheckerBase<SecretLayer2>) {};
-class $modify(SecretLayer3Hook, MessageCheck::MessageCheckerBase<SecretLayer3>) {};
-class $modify(SecretLayer4Hook, MessageCheck::MessageCheckerBase<SecretLayer4>) {};
-class $modify(SecretLayer5Hook, MessageCheck::MessageCheckerBase<SecretLayer5>) {};
-class $modify(LevelAreaInnerLayerHook, MessageCheck::MessageCheckerBase<LevelAreaInnerLayer>) {};
-class $modify(GauntletSelectLayerHook, MessageCheck::MessageCheckerBase<GauntletSelectLayer>) {};
-class $modify(GauntletLayerHook, MessageCheck::MessageCheckerBase<GauntletLayer>) {};
+// Hook 1
+class $modify(MenuLayerHook, MenuLayer) {
+    bool init() {
+        if (!MenuLayer::init()) return false;
+        MessageCheck::maybeSchedule(this);
+        return true;
+    }
+};
+
+// Hook 2
+class $modify(PlayLayerHook, PlayLayer) {
+    bool init(GJGameLevel* level) {
+        if (!PlayLayer::init(level)) return false;
+        MessageCheck::maybeSchedule(this);
+        return true;
+    }
+};
+
+// Hook 3
+class $modify(LevelEditorLayerHook, LevelEditorLayer) {
+    bool init(GJGameLevel* level, bool idk) {
+        if (!LevelEditorLayer::init(level, idk)) return false;
+        MessageCheck::maybeSchedule(this);
+        return true;
+    }
+};
