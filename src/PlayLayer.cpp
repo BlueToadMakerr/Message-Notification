@@ -14,7 +14,6 @@ using namespace geode::prelude;
 class $modify(MessageChecker_Play, PlayLayer) {
     struct Fields {
         inline static std::chrono::steady_clock::time_point nextCheck = std::chrono::steady_clock::now();
-        inline static bool bootChecked = false;
     };
 
     static std::vector<std::string> split(const std::string& str, char delim) {
@@ -52,6 +51,18 @@ class $modify(MessageChecker_Play, PlayLayer) {
     }
 
     void checkMessages() {
+        // Global kill switch
+        if (Mod::get()->getSettingValue<bool>("stop-notifications")) {
+            log::info("global stop-notifications is enabled, skipping check");
+            return;
+        }
+
+        // Layer-specific kill switch
+        if (Mod::get()->getSettingValue<bool>("disable-while-playing")) {
+            log::info("disable-while-playing is enabled, skipping check");
+            return;
+        }
+
         log::info("checking for new messages");
 
         auto* acc = GJAccountManager::sharedState();
@@ -155,7 +166,6 @@ class $modify(MessageChecker_Play, PlayLayer) {
         int interval = 300;
         try {
             interval = Mod::get()->getSettingValue<int>("check-interval");
-            interval = std::clamp(interval, 60, 600);
             log::info("using check interval from settings: {}", interval);
         } catch (...) {
             log::info("failed to get check-interval setting, using default 300");
@@ -179,16 +189,8 @@ class $modify(MessageChecker_Play, PlayLayer) {
 
         log::info("PlayLayer init");
 
-        if (!Fields::bootChecked) {
-            Fields::bootChecked = true;
-            log::info("boot sequence starting");
-
-            this->schedule(schedule_selector(MessageChecker_Play::onScheduledTick), 1.0f);
-            onScheduledTick(0);
-        } else {
-            log::info("boot already done, skipping init check and re-running the schedule");
-            this->schedule(schedule_selector(MessageChecker_Play::onScheduledTick), 1.0f);
-        }
+        log::info("re-running the schedule");
+        this->schedule(schedule_selector(MessageChecker_Play::onScheduledTick), 1.0f);
 
         return true;
     }
