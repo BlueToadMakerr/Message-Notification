@@ -8,7 +8,7 @@
   },
   "id": "bluetoadmaker.messagenotification",
   "name": "Message Notifications",
-  "version": "v1.0.0",
+  "version": "v1.0.1",
   "developer": "BlueToadMaker",
   "description": "Sends a notification when you received a new message",
   "tags": ["online", "enhancement"],
@@ -24,10 +24,10 @@
       "type": "int",
       "default": 300,
       "min": 60,
-      "max": 600,
+      "max": 3600,
       "step": 1,
       "name": "Check Messages (Seconds)",
-      "description": "How often to check for messages\nNote: Setting the value too low can get you temporarily IP banned\n\n60 Seconds = 1 Minute\n120 Seconds = 2 Minutes\n180 Seconds = 3 Minutes\n240 Seconds = 4 Minutes\n300 Seconds = 5 Minutes\n360 Seconds = 6 Minutes\n420 Seconds = 7 Minutes\n480 Seconds = 8 Minutes\n540 Seconds = 9 Minutes\n600 Seconds = 10 Minutes"
+      "description": "How often to check for messages\nNote: Setting the value too low can get you temporarily IP banned\n\n60 Seconds = 1 Minute\n120 Seconds = 2 Minutes\n180 Seconds = 3 Minutes\n240 Seconds = 4 Minutes\n300 Seconds = 5 Minutes\n360 Seconds = 6 Minutes\n420 Seconds = 7 Minutes\n480 Seconds = 8 Minutes\n540 Seconds = 9 Minutes\n600 Seconds = 10 Minutes\n3600 Seconds = 1 Hour"
     },
     "stop-notifications": {
       "type": "bool",
