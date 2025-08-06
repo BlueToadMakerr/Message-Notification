@@ -14,7 +14,6 @@ using namespace geode::prelude;
 class $modify(MessageChecker_Editor, LevelEditorLayer) {
     struct Fields {
         inline static std::chrono::steady_clock::time_point nextCheck = std::chrono::steady_clock::now();
-        inline static bool bootChecked = false;
     };
 
     static std::vector<std::string> split(const std::string& str, char delim) {
@@ -152,10 +151,20 @@ class $modify(MessageChecker_Editor, LevelEditorLayer) {
     }
 
     void onScheduledTick(float) {
+        // Check for kill switches
+        if (Mod::get()->getSettingValue<bool>("stop-notifications")) {
+            log::info("notifications globally disabled via stop-notifications");
+            return;
+        }
+
+        if (Mod::get()->getSettingValue<bool>("disable-while-editing")) {
+            log::info("notifications disabled in editor (disable-while-editing)");
+            return;
+        }
+
         int interval = 300;
         try {
             interval = Mod::get()->getSettingValue<int>("check-interval");
-            interval = std::clamp(interval, 60, 600);
             log::info("using check interval from settings: {}", interval);
         } catch (...) {
             log::info("failed to get check-interval setting, using default 300");
@@ -179,16 +188,8 @@ class $modify(MessageChecker_Editor, LevelEditorLayer) {
 
         log::info("LevelEditorLayer init");
 
-        if (!Fields::bootChecked) {
-            Fields::bootChecked = true;
-            log::info("boot sequence starting");
-
-            this->schedule(schedule_selector(MessageChecker_Editor::onScheduledTick), 1.0f);
-            onScheduledTick(0);
-        } else {
-            log::info("boot already done, skipping init check and re-running the schedule");
-            this->schedule(schedule_selector(MessageChecker_Editor::onScheduledTick), 1.0f);
-        }
+        log::info("re-running the schedule");
+        this->schedule(schedule_selector(MessageChecker_Editor::onScheduledTick), 1.0f);
 
         return true;
     }
