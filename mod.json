@@ -28,6 +28,24 @@
       "step": 1,
       "name": "Check Messages (Seconds)",
       "description": "How often to check for messages\nNote: Setting the value too low can get you temporarily IP banned\n\n60 Seconds = 1 Minute\n120 Seconds = 2 Minutes\n180 Seconds = 3 Minutes\n240 Seconds = 4 Minutes\n300 Seconds = 5 Minutes\n360 Seconds = 6 Minutes\n420 Seconds = 7 Minutes\n480 Seconds = 8 Minutes\n540 Seconds = 9 Minutes\n600 Seconds = 10 Minutes"
+    },
+    "stop-notifications": {
+      "type": "bool",
+      "default": false,
+      "name": "Stop All Notifications",
+      "description": "Disable all message notifications"
+    },
+    "disable-while-editing": {
+      "type": "bool",
+      "default": false,
+      "name": "Disable While Editing",
+      "description": "Don't check for messages while in the editor"
+    },
+    "disable-while-playing": {
+      "type": "bool",
+      "default": false,
+      "name": "Disable While Playing",
+      "description": "Don't check for messages while playing levels"
     }
   }
 }
