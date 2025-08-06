@@ -52,6 +52,11 @@ class $modify(MessageChecker, MenuLayer) {
     }
 
     void checkMessages() {
+        if (Mod::get()->getSettingValue<bool>("stop-notifications")) {
+            log::info("global kill switch active - skipping check");
+            return;
+        }
+
         log::info("checking for new messages");
 
         auto* acc = GJAccountManager::sharedState();
@@ -155,7 +160,6 @@ class $modify(MessageChecker, MenuLayer) {
         int interval = 300;
         try {
             interval = Mod::get()->getSettingValue<int>("check-interval");
-            interval = std::clamp(interval, 60, 600);
             log::info("using check interval from settings: {}", interval);
         } catch (...) {
             log::info("failed to get check-interval setting, using default 300");
