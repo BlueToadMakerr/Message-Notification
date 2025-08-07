@@ -67,10 +67,21 @@ class MessageHandler : public CCNode {
     
     std::chrono::steady_clock::time_point m_nextCheck = std::chrono::steady_clock::now();
     std::shared_ptr<EventListener<web::WebTask>> m_listener;
+    bool m_checkedMenuLayer;
 
     void update(float dt) {
         int interval = Mod::get()->getSettingValue<int>("check-interval");
         auto now = std::chrono::steady_clock::now();
+
+        if (MenuLayer::get()) {
+            if (!m_checkedMenuLayer) {
+                m_nextCheck = std::chrono::steady_clock::now();
+                m_checkedMenuLayer = true;
+            }
+        }
+        else {
+            m_checkedMenuLayer = false;
+        }
 
         if (now >= m_nextCheck) {
             checkMessages();
