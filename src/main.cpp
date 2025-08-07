@@ -107,7 +107,7 @@ class MessageHandler : public CCNode {
             }
         });
 
-		auto downloadTask = req.post("https://www.boomlings.com/database/getGJMessages20.php");
+        auto downloadTask = req.post("https://www.boomlings.com/database/getGJMessages20.php");
         m_listener->setFilter(downloadTask);
     }
 
@@ -151,14 +151,14 @@ class MessageHandler : public CCNode {
 
 public:
     static MessageHandler* create() {
-		auto ret = new MessageHandler();
-		ret->autorelease();
-		return ret;
-	}
+        auto ret = new MessageHandler();
+        ret->autorelease();
+        return ret;
+    }
 };
 
 $execute {
-	Loader::get()->queueInMainThread([]{
-		CCScheduler::get()->scheduleUpdateForTarget(MessageHandler::create(), INT_MAX, false);
-	});
+    Loader::get()->queueInMainThread([]{
+        CCScheduler::get()->scheduleUpdateForTarget(MessageHandler::create(), INT_MAX, false);
+    });
 }
