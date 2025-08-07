@@ -1,4 +1,4 @@
-# Auto Options
+# Message Notifications
 
 Sends a notification every time you get a new message
 
