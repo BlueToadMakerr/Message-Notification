@@ -101,6 +101,10 @@ class MessageHandler : public CCNode {
             return;
         }
 
+        if (menuInit == 0) {
+            return;
+        }
+
         auto* acc = GJAccountManager::sharedState();
         if (acc->m_accountID <= 0 || acc->m_GJP2.empty()) {
             log::debug("User not logged in, skipping check.");
@@ -144,10 +148,6 @@ class MessageHandler : public CCNode {
         
         // stores the message ID as they are always incremental, no need to store the whole message.
         Mod::get()->setSavedValue("latest-id", latestID);
-
-        if (menuInit == 0) {
-            return;
-        }
 
         if (newMessages > 1) {
             showNotification(fmt::format("{} New Messages!", newMessages), "Check them out!");
