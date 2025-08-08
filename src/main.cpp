@@ -5,7 +5,7 @@
 
 using namespace geode::prelude;
 
-static int init = 0;
+static int menuInit = 0;
 
 struct MessageData {
 
@@ -79,7 +79,7 @@ class MessageHandler : public CCNode {
             if (!m_checkedMenuLayer) {
                 m_nextCheck = std::chrono::steady_clock::now();
                 m_checkedMenuLayer = true;
-                init = 1;
+                menuInit = 1;
             }
         }
         else {
@@ -144,7 +144,7 @@ class MessageHandler : public CCNode {
         // stores the message ID as they are always incremental, no need to store the whole message.
         Mod::get()->setSavedValue("latest-id", latestID);
 
-        while (init == 0) {
+        while (menuInit == 0) {
 // Wait
         std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
