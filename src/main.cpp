@@ -144,13 +144,12 @@ class MessageHandler : public CCNode {
         // stores the message ID as they are always incremental, no need to store the whole message.
         Mod::get()->setSavedValue("latest-id", latestID);
 
-        if (initFlag == 0) {
-            log::debug("Init flag is 0, waiting before showing notification...");
+        if (menuInit == 0) {
             int nm = newMessages;
             auto sp = split;
 
             this->schedule([this, nm, sp](float) mutable {
-                if (initFlag == 1) {
+                if (menuInit == 1) {
                     if (nm > 1) {
                         showNotification(fmt::format("{} New Messages!", nm), "Check them out!");
                     }
