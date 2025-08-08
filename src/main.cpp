@@ -169,7 +169,24 @@ public:
 };
 
 $execute {
-    Loader::get()->queueInMainThread([]{
-        CCScheduler::get()->scheduleUpdateForTarget(MessageHandler::create(), INT_MAX, false);
+    Loader::get()->queueInMainThread([] {
+        auto node = CCNode::create();
+        node->retain(); // prevent early deletion
+
+        float* elapsed = new float(0.f);
+
+        node->schedule([node, elapsed](float dt) {
+            *elapsed += dt;
+            if (*elapsed >= 5.0f) { // 5 seconds should be enough time for textures to properly load
+                CCScheduler::get()->scheduleUpdateForTarget(MessageHandler::create(), INT_MAX, false);
+
+                node->unscheduleAllSelectors();
+                node->removeFromParent();
+                node->release();
+                delete elapsed;
+            }
+        }, "delayed_handler");
+
+        CCDirector::sharedDirector()->getRunningScene()->addChild(node);
     });
 }
