@@ -149,21 +149,25 @@ class MessageHandler : public CCNode {
             auto sp = split;
 
             this->schedule([this, nm, sp](float) mutable {
-                if (menuInit == 1) {
-                    if (nm > 1) {
-                        showNotification(fmt::format("{} New Messages!", nm), "Check them out!");
+                    if (menuInit == 1) {
+                            if (nm > 1) {
+                                    showNotification(fmt::format("{} New Messages!", nm), "Check them out!");
+                            }
+                            else if (nm == 1) {
+                                    MessageData data = MessageData::parseInto(sp[sp.size() - 1]);
+                                    showNotification(fmt::format("New Message from: {}", data.username), data.title);
+                            }
+                            this->unscheduleWaitForInit(0);
                     }
-                    else if (nm == 1) {
-                        MessageData data = MessageData::parseInto(sp[sp.size() - 1]);
-                        showNotification(fmt::format("New Message from: {}", data.username), data.title);
-                    }
-                    this->unschedule("WaitForInit");
-                }
-            }, 1f, "WaitForInit");
+            }, 1.0f, "WaitForInit");
 
             return;
-        }
+    }
 
+    void unscheduleWaitForInit(float) {
+            this->unschedule(schedule_selector(MessageHandler::unscheduleWaitForInit));
+
+        }
         if (newMessages > 1) {
             showNotification(fmt::format("{} New Messages!", newMessages), "Check them out!");
         }
