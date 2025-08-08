@@ -80,6 +80,7 @@ class MessageHandler : public CCNode {
                 m_nextCheck = std::chrono::steady_clock::now();
                 m_checkedMenuLayer = true;
                 menuInit = 1;
+                checkMessages();
             }
         }
         else {
@@ -144,30 +145,10 @@ class MessageHandler : public CCNode {
         // stores the message ID as they are always incremental, no need to store the whole message.
         Mod::get()->setSavedValue("latest-id", latestID);
 
-        if (menuInit == 0) {
-            int nm = newMessages;
-            auto sp = split;
-
-            this->schedule([this, nm, sp](float) mutable {
-                    if (menuInit == 1) {
-                            if (nm > 1) {
-                                    showNotification(fmt::format("{} New Messages!", nm), "Check them out!");
-                            }
-                            else if (nm == 1) {
-                                    MessageData data = MessageData::parseInto(sp[sp.size() - 1]);
-                                    showNotification(fmt::format("New Message from: {}", data.username), data.title);
-                            }
-                            this->unscheduleWaitForInit(0);
-                    }
-            }, 1.0f, "WaitForInit");
-
+        if (initFlag == 0) {
             return;
-    }
-
-    void unscheduleWaitForInit(float) {
-            this->unschedule(schedule_selector(MessageHandler::unscheduleWaitForInit));
-
         }
+
         if (newMessages > 1) {
             showNotification(fmt::format("{} New Messages!", newMessages), "Check them out!");
         }
