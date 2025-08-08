@@ -1,3 +1,3 @@
-## 1.0.0
+## 1.0.4
 
-* This mod got born
+* Fixed a bug where textures might go missing sometimes causing a crash
