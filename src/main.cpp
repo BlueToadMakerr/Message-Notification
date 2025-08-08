@@ -5,6 +5,8 @@
 
 using namespace geode::prelude;
 
+static int init = 0;
+
 struct MessageData {
 
     int messageID = -1;
@@ -77,6 +79,7 @@ class MessageHandler : public CCNode {
             if (!m_checkedMenuLayer) {
                 m_nextCheck = std::chrono::steady_clock::now();
                 m_checkedMenuLayer = true;
+                init = 1;
             }
         }
         else {
@@ -141,6 +144,11 @@ class MessageHandler : public CCNode {
         // stores the message ID as they are always incremental, no need to store the whole message.
         Mod::get()->setSavedValue("latest-id", latestID);
 
+        while (init == 0) {
+// Wait
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+
         if (newMessages > 1) {
             showNotification(fmt::format("{} New Messages!", newMessages), "Check them out!");
         }
@@ -169,24 +177,8 @@ public:
 };
 
 $execute {
-    Loader::get()->queueInMainThread([] {
-        auto node = CCNode::create();
-        node->retain(); // prevent early deletion
-
-        float* elapsed = new float(0.f);
-
-        node->schedule([node, elapsed](float dt) {
-            *elapsed += dt;
-            if (*elapsed >= 5.0f) { // 5 seconds should be enough time for textures to properly load
-                CCScheduler::get()->scheduleUpdateForTarget(MessageHandler::create(), INT_MAX, false);
-
-                node->unscheduleAllSelectors();
-                node->removeFromParent();
-                node->release();
-                delete elapsed;
-            }
-        }, "delayed_handler");
-
-        CCDirector::sharedDirector()->getRunningScene()->addChild(node);
-    });
+     Loader::get()->queueInMainThread([]{
+          CCScheduler::get()->scheduleUpdateForTarget(MessageHandler::create(), INT_MAX, false);
+     });
 }
+
