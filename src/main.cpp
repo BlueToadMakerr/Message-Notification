@@ -145,7 +145,7 @@ class MessageHandler : public CCNode {
         // stores the message ID as they are always incremental, no need to store the whole message.
         Mod::get()->setSavedValue("latest-id", latestID);
 
-        if (initFlag == 0) {
+        if (menuInit == 0) {
             return;
         }
 
