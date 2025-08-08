@@ -144,9 +144,25 @@ class MessageHandler : public CCNode {
         // stores the message ID as they are always incremental, no need to store the whole message.
         Mod::get()->setSavedValue("latest-id", latestID);
 
-        while (menuInit == 0) {
-// Wait
-        std::this_thread::sleep_for(std::chrono::milliseconds(3000));
+        if (initFlag == 0) {
+            log::debug("Init flag is 0, waiting before showing notification...");
+            int nm = newMessages;
+            auto sp = split;
+
+            this->schedule([this, nm, sp](float) mutable {
+                if (initFlag == 1) {
+                    if (nm > 1) {
+                        showNotification(fmt::format("{} New Messages!", nm), "Check them out!");
+                    }
+                    else if (nm == 1) {
+                        MessageData data = MessageData::parseInto(sp[sp.size() - 1]);
+                        showNotification(fmt::format("New Message from: {}", data.username), data.title);
+                    }
+                    this->unschedule("WaitForInit");
+                }
+            }, 1f, "WaitForInit");
+
+            return;
         }
 
         if (newMessages > 1) {
