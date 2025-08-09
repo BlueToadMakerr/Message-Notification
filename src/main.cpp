@@ -5,8 +5,6 @@
 
 using namespace geode::prelude;
 
-static int menuInit = 0;
-
 struct MessageData {
 
     int messageID = -1;
@@ -70,6 +68,7 @@ class MessageHandler : public CCNode {
     std::chrono::steady_clock::time_point m_nextCheck = std::chrono::steady_clock::now();
     std::shared_ptr<EventListener<web::WebTask>> m_listener;
     bool m_checkedMenuLayer;
+    bool m_loaded = false;
 
     void update(float dt) {
         int interval = Mod::get()->getSettingValue<int>("check-interval");
@@ -79,12 +78,15 @@ class MessageHandler : public CCNode {
             if (!m_checkedMenuLayer) {
                 m_nextCheck = std::chrono::steady_clock::now();
                 m_checkedMenuLayer = true;
-                menuInit = 1;
-                checkMessages();
+                m_loaded = true;
             }
         }
         else {
             m_checkedMenuLayer = false;
+        }
+
+        if (!m_loaded) {
+            return;
         }
 
         if (now >= m_nextCheck) {
@@ -98,10 +100,6 @@ class MessageHandler : public CCNode {
         if (Mod::get()->getSettingValue<bool>("stop-notifications")
             || (PlayLayer::get() && Mod::get()->getSettingValue<bool>("disable-while-playing"))
             || (LevelEditorLayer::get() && Mod::get()->getSettingValue<bool>("disable-while-editing"))) {
-            return;
-        }
-
-        if (menuInit == 0) {
             return;
         }
 
