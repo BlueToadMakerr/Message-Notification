@@ -8,7 +8,7 @@
   },
   "id": "bluetoadmaker.messagenotification",
   "name": "Message Notifications",
-  "version": "v1.0.4",
+  "version": "v1.0.41",
   "developer": "BlueToadMaker",
   "description": "Sends a notification when you received a new message",
   "tags": ["online", "enhancement"],
