@@ -13,7 +13,7 @@
   "description": "Sends a notification when you received a new message",
   "tags": ["online", "enhancement"],
   "links": {
-    "source": "https://github.com/BlueToadMakerr/Message-Notification"
+    "source": "https://github.com/BlueToadMakerr/Message-Notification",
     "community": "https://discord.gg/k5UYBrXP6f"
   },
   "issues": {
