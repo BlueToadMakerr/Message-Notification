@@ -137,7 +137,8 @@ struct FriendData {
 class MessageHandler : public CCNode {
     
     std::chrono::steady_clock::time_point m_nextCheck = std::chrono::steady_clock::now();
-    std::shared_ptr<EventListener<web::WebTask>> m_listener;
+    std::shared_ptr<EventListener<web::WebTask>> m_messageListener;
+    std::shared_ptr<EventListener<web::WebTask>> m_friendListener;
     bool m_checkedMenuLayer;
     bool m_loaded = false;
 
@@ -186,8 +187,8 @@ class MessageHandler : public CCNode {
         req.userAgent("");
         req.header("Content-Type", "application/x-www-form-urlencoded");
 
-        m_listener = std::make_shared<EventListener<web::WebTask>>();
-        m_listener->bind([this] (web::WebTask::Event* e) {
+        m_messageListener = std::make_shared<EventListener<web::WebTask>>();
+        m_messageListener->bind([this] (web::WebTask::Event* e) {
             if (web::WebResponse* res = e->getValue()) {
                 if (res->ok() && res->string().isOk()) {
                     onMessageResponse(res->string().unwrap());
@@ -197,7 +198,7 @@ class MessageHandler : public CCNode {
         });
 
         auto downloadTask = req.post("https://www.boomlings.com/database/getGJMessages20.php");
-        m_listener->setFilter(downloadTask);
+        m_messageListener->setFilter(downloadTask);
     }
 
     void onMessageResponse(const std::string& data) {
@@ -246,8 +247,8 @@ class MessageHandler : public CCNode {
         req.userAgent("");
         req.header("Content-Type", "application/x-www-form-urlencoded");
 
-        m_listener = std::make_shared<EventListener<web::WebTask>>();
-        m_listener->bind([this] (web::WebTask::Event* e) {
+        m_friendListener = std::make_shared<EventListener<web::WebTask>>();
+        m_friendListener->bind([this] (web::WebTask::Event* e) {
             if (web::WebResponse* res = e->getValue()) {
                 if (res->ok() && res->string().isOk()) {
                     onFriendResponse(res->string().unwrap());
@@ -257,7 +258,7 @@ class MessageHandler : public CCNode {
         });
 
         auto downloadTask = req.post("https://www.boomlings.com/database/getGJFriendRequests20.php");
-        m_listener->setFilter(downloadTask);
+        m_friendListener->setFilter(downloadTask);
     }
 
     void onFriendResponse(const std::string& data) {
