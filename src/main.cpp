@@ -1,6 +1,8 @@
 #include <Geode/Geode.hpp>
 #include <Geode/modify/MenuLayer.hpp>
 #include <Geode/utils/base64.hpp>
+#include <Geode/utils/web.hpp>
+#include <Geode/utils/async.hpp>
 #include <chrono>
 
 using namespace geode::prelude;
@@ -16,7 +18,7 @@ struct MessageData {
     std::string age;
     bool read = false;
     bool sender = false;
-    
+
     static MessageData parseInto(const std::string& data) {
         MessageData messageData;
         auto split = utils::string::split(data, ":");
@@ -135,10 +137,10 @@ struct FriendData {
 };
 
 class MessageHandler : public CCNode {
-    
+
     std::chrono::steady_clock::time_point m_nextCheck = std::chrono::steady_clock::now();
-    std::shared_ptr<EventListener<web::WebTask>> m_messageListener;
-    std::shared_ptr<EventListener<web::WebTask>> m_friendListener;
+    async::TaskHolder<web::WebResponse> m_messageTask;
+    async::TaskHolder<web::WebResponse> m_friendTask;
     bool m_checkedMenuLayer;
     bool m_loaded = false;
 
@@ -182,23 +184,25 @@ class MessageHandler : public CCNode {
             return;
         }
 
-        auto req = web::WebRequest();
-        req.bodyString(fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2));
+        web::WebRequest req;
+        req.bodyString(fmt::format(
+            "accountID={}&gjp2={}&secret=Wmfd2893gb7",
+            acc->m_accountID,
+            acc->m_GJP2
+        ));
         req.userAgent("");
         req.header("Content-Type", "application/x-www-form-urlencoded");
 
-        m_messageListener = std::make_shared<EventListener<web::WebTask>>();
-        m_messageListener->bind([this] (web::WebTask::Event* e) {
-            if (web::WebResponse* res = e->getValue()) {
-                if (res->ok() && res->string().isOk()) {
-                    onMessageResponse(res->string().unwrap());
+        m_messageTask.spawn(
+            req.post("https://www.boomlings.com/database/getGJMessages20.php"),
+            [this](web::WebResponse res) {
+                if (res.ok() && res.string().isOk()) {
+                    onMessageResponse(res.string().unwrap());
+                } else {
+                    log::debug("Message request failed: {}", res.code());
                 }
-                else log::debug("Message request failed: {}", res->code());
             }
-        });
-
-        auto downloadTask = req.post("https://www.boomlings.com/database/getGJMessages20.php");
-        m_messageListener->setFilter(downloadTask);
+        );
     }
 
     void onMessageResponse(const std::string& data) {
@@ -208,7 +212,7 @@ class MessageHandler : public CCNode {
 
         int latestID = Mod::get()->getSavedValue<int>("latest-id", 0);
         int newMessages = 0;
-        
+
         for (const auto& str : split) {
             MessageData data = MessageData::parseInto(str);
             if (data.messageID > latestID) {
@@ -216,7 +220,7 @@ class MessageHandler : public CCNode {
                 newMessages++;
             }
         }
-        
+
         // stores the message ID as they are always incremental, no need to store the whole message.
         Mod::get()->setSavedValue("latest-id", latestID);
 
@@ -242,33 +246,35 @@ class MessageHandler : public CCNode {
             return;
         }
 
-        auto req = web::WebRequest();
-        req.bodyString(fmt::format("accountID={}&gjp2={}&secret=Wmfd2893gb7", acc->m_accountID, acc->m_GJP2));
+        web::WebRequest req;
+        req.bodyString(fmt::format(
+            "accountID={}&gjp2={}&secret=Wmfd2893gb7",
+            acc->m_accountID,
+            acc->m_GJP2
+        ));
         req.userAgent("");
         req.header("Content-Type", "application/x-www-form-urlencoded");
 
-        m_friendListener = std::make_shared<EventListener<web::WebTask>>();
-        m_friendListener->bind([this] (web::WebTask::Event* e) {
-            if (web::WebResponse* res = e->getValue()) {
-                if (res->ok() && res->string().isOk()) {
-                    onFriendResponse(res->string().unwrap());
+        m_friendTask.spawn(
+            req.post("https://www.boomlings.com/database/getGJFriendRequests20.php"),
+            [this](web::WebResponse res) {
+                if (res.ok() && res.string().isOk()) {
+                    onFriendResponse(res.string().unwrap());
+                } else {
+                    log::debug("Friend request failed: {}", res.code());
                 }
-                else log::debug("Friend request failed: {}", res->code());
             }
-        });
-
-        auto downloadTask = req.post("https://www.boomlings.com/database/getGJFriendRequests20.php");
-        m_friendListener->setFilter(downloadTask);
+        );
     }
 
     void onFriendResponse(const std::string& data) {
         std::vector<std::string> split = utils::string::split(data, "|");
-        
+
         std::reverse(split.begin(), split.end());
 
         int latestID = Mod::get()->getSavedValue<int>("latest-request-id", 0);
         int newFriends = 0;
-        
+
         for (const auto& str : split) {
             FriendData data = FriendData::parseInto(str);
             if (data.friendRequestID > latestID) {
@@ -276,7 +282,7 @@ class MessageHandler : public CCNode {
                 newFriends++;
             }
         }
-        
+
         // Store the Friend Request ID
         Mod::get()->setSavedValue("latest-request-id", latestID);
 
