@@ -1,3 +1,6 @@
+## 1.1.1
+* Ported to 2.081
+
 ## 1.1.0
 * Added support for receiving friend request notifications
 
